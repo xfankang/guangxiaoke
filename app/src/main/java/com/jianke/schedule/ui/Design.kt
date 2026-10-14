@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Icon
@@ -129,6 +130,9 @@ fun StatusPill(
     container: Color,
     content: Color,
     modifier: Modifier = Modifier,
+    fontSize: TextUnit = 10.sp,
+    horizontalPadding: Dp = 9.dp,
+    verticalPadding: Dp = 3.dp,
     onClick: (() -> Unit)? = null,
 ) {
     Box(
@@ -142,9 +146,9 @@ fun StatusPill(
                     Modifier
                 },
             )
-            .padding(horizontal = 9.dp, vertical = 3.dp),
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
     ) {
-        Text(text = text, fontSize = 10.sp, lineHeight = 13.sp, color = content)
+        Text(text = text, fontSize = fontSize, lineHeight = fontSize * 1.35f, color = content)
     }
 }
 

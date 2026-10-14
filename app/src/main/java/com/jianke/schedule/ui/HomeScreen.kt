@@ -863,6 +863,10 @@ private fun TodayTimeline(schedule: Schedule, week: Int, modifier: Modifier = Mo
                         text = "已完成今日所有课程",
                         container = MiuixTheme.colorScheme.primary.copy(alpha = 0.14f),
                         content = MiuixTheme.colorScheme.primary,
+                        // 比普通状态标签大一号，这句是「今天的课全上完了」的正反馈
+                        fontSize = 15.sp,
+                        horizontalPadding = 18.dp,
+                        verticalPadding = 8.dp,
                     )
                 }
             }

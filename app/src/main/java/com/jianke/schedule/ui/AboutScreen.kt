@@ -35,13 +35,18 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/** 作者单独一块，和鸣谢名单分开。 */
+private val AUTHORS = listOf(
+    "xfankang" to "作者",
+    "Rikuyal" to "作者",
+)
+
 private val CREDITS = listOf(
     "DeepSeek Harness" to "开发与调试环境",
     "YuKongA" to "Miuix 界面组件库",
-    "薪音" to "测试",
-    "curian" to "测试",
-    "xxl" to "测试",
-    "xfankang" to "作者",
+    "薪音" to "测试人员",
+    "curian" to "测试人员",
+    "xxl" to "测试人员",
 )
 
 @Composable
@@ -96,6 +101,20 @@ fun AboutScreen() {
                 lineHeight = 19.sp,
                 color = Color(0xFFE53935),
             )
+        }
+
+        SectionTitle("作者")
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Ui.Page),
+            cornerRadius = Ui.CardCorner,
+            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+        ) {
+            AUTHORS.forEachIndexed { index, (name, role) ->
+                if (index > 0) Hairline()
+                CreditRow(name = name, role = role)
+            }
         }
 
         SectionTitle("鸣谢")
