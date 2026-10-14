@@ -1,15 +1,19 @@
 package com.jianke.schedule.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -47,6 +51,14 @@ private val dockItems = listOf(
     DockItem(AboutCircleIcon, "关于"),
 )
 
+/** 标题栏 / 底栏的表面色：有壁纸时用统一的一层不透明度，不再三处各调一个值。 */
+@Composable
+private fun barSurface(): Color = if (LocalWallpaperActive.current) {
+    MiuixTheme.colorScheme.surface.copy(alpha = Ui.Scrim)
+} else {
+    MiuixTheme.colorScheme.surface
+}
+
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
@@ -65,8 +77,6 @@ fun AppRoot() {
 
     val override = remember { Prefs.darkOverride(context) }
     var darkOverride by remember { mutableStateOf(override) }
-    val systemDark = isSystemInDarkTheme()
-    val dark = darkOverride ?: systemDark
 
     var dock by remember { mutableStateOf(Prefs.dockEnabled(context)) }
     // 悬浮 Dock 自己控制位置：贴着系统导航栏上方 6dp。
@@ -110,7 +120,7 @@ fun AppRoot() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.30f)),
+                        .background(MiuixTheme.colorScheme.surface.copy(alpha = Ui.WallpaperDim)),
                 )
             }
 
@@ -125,22 +135,14 @@ fun AppRoot() {
                             },
                             // 「广小课」下面这行小字
                             subtitle = if (tab == 0) "天天开心" else "",
-                            color = if (wallpaper != null) {
-                                MiuixTheme.colorScheme.surface.copy(alpha = 0.82f)
-                            } else {
-                                MiuixTheme.colorScheme.surface
-                            },
+                            color = barSurface(),
                         )
                     },
                     bottomBar = {
                         if (!dock) {
                             NavigationBar(
                                 mode = NavigationBarDisplayMode.IconOnly,
-                                color = if (wallpaper != null) {
-                                    MiuixTheme.colorScheme.surface.copy(alpha = 0.92f)
-                                } else {
-                                    MiuixTheme.colorScheme.surface
-                                },
+                                color = barSurface(),
                             ) {
                                 NavigationBarItem(
                                     selected = tab == 0,
@@ -178,36 +180,48 @@ fun AppRoot() {
                                     bottom = if (dock) navInset + DOCK_RESERVED_HEIGHT else 0.dp,
                                 ),
                         ) {
-                            when (tab) {
-                                0 -> HomeScreen(
-                                    schedule = schedule,
-                                    onImport = { importing = true },
-                                )
+                            // 切页给一点淡入 + 轻微上移，避免三个页面生硬地瞬间对调
+                            AnimatedContent(
+                                targetState = tab,
+                                transitionSpec = {
+                                    (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 26 })
+                                        .togetherWith(
+                                            fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it / 26 },
+                                        )
+                                },
+                                label = "tab",
+                            ) { target ->
+                                when (target) {
+                                    0 -> HomeScreen(
+                                        schedule = schedule,
+                                        onImport = { importing = true },
+                                    )
 
-                                1 -> SettingsScreen(
-                                    dark = dark,
-                                    onDarkChange = { value ->
-                                        darkOverride = value
-                                        Prefs.setDarkOverride(context, value)
-                                    },
-                                    dock = dock,
-                                    onDockChange = { value ->
-                                        dock = value
-                                        Prefs.setDockEnabled(context, value)
-                                    },
-                                    hasWallpaper = wallpaper != null,
-                                    onWallpaperChanged = {
-                                        wallpaper = runCatching { Wallpaper.load(context) }.getOrNull()
-                                    },
-                                    onWallpaperTransform = { s, dx, dy ->
-                                        wpScale = s
-                                        wpOffsetX = dx
-                                        wpOffsetY = dy
-                                        Prefs.setWallpaperTransform(context, s, dx, dy)
-                                    },
-                                )
+                                    1 -> SettingsScreen(
+                                        darkOverride = darkOverride,
+                                        onDarkOverrideChange = { value ->
+                                            darkOverride = value
+                                            Prefs.setDarkOverride(context, value)
+                                        },
+                                        dock = dock,
+                                        onDockChange = { value ->
+                                            dock = value
+                                            Prefs.setDockEnabled(context, value)
+                                        },
+                                        hasWallpaper = wallpaper != null,
+                                        onWallpaperChanged = {
+                                            wallpaper = runCatching { Wallpaper.load(context) }.getOrNull()
+                                        },
+                                        onWallpaperTransform = { s, dx, dy ->
+                                            wpScale = s
+                                            wpOffsetX = dx
+                                            wpOffsetY = dy
+                                            Prefs.setWallpaperTransform(context, s, dx, dy)
+                                        },
+                                    )
 
-                                else -> AboutScreen()
+                                    else -> AboutScreen()
+                                }
                             }
                         }
 

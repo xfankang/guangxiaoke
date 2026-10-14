@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -58,24 +59,25 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.TabRow
-import top.yukonga.miuix.kmp.basic.TabRowDefaults
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
+import top.yukonga.miuix.kmp.icon.extended.Weeks
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 private const val ROW_COUNT = 5
-private val PERIOD_GUTTER = 42.dp
-private val CELL_GAP = 4.dp
-private val PAGE_PADDING = 16.dp
+private const val MODE_WEEK = 0
 
 @Composable
 fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableIntStateOf(MODE_WEEK) }
     val totalWeeks = (schedule?.semester?.totalWeeks ?: 1).coerceAtLeast(1)
     val currentWeek = remember(schedule) { schedule?.let { currentWeekOf(it) } ?: 1 }
     val pagerState = rememberPagerState(
@@ -95,64 +97,73 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (schedule == null) {
             EmptyState(onImport = onImport)
-        } else if (tab == 0) {
-            val shownWeek = pagerState.currentPage + 1
-            WeekPagerHeader(
-                tab = tab,
-                onTabChange = { tab = it },
-                week = shownWeek,
-                totalWeeks = totalWeeks,
-                isCurrent = shownWeek == currentWeek,
-                onPrev = {
-                    scope.launch {
-                        pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0))
-                    }
-                },
-                onNext = {
-                    scope.launch {
-                        pagerState.animateScrollToPage(
-                            (pagerState.currentPage + 1).coerceAtMost(totalWeeks - 1),
-                        )
-                    }
-                },
-                onToday = {
-                    scope.launch {
-                        pagerState.animateScrollToPage((currentWeek - 1).coerceIn(0, totalWeeks - 1))
-                    }
-                },
-            )
-            DayHeader()
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) { page ->
-                WeekGrid(
-                    courses = schedule.coursesOfWeek(page + 1),
-                    onCourseClick = { course, rect ->
-                        val now = System.currentTimeMillis()
-                        // 浮层是独立窗口：点外面时它会先被关掉，这一次触摸就不能再当成
-                        // 「点课程」而把浮层又打开（否则同一个位置会反复弹）。
-                        if (now - lastDismissAt < 320L) {
-                            lastDismissAt = 0L
-                        } else if (selectedCourse == course) {
-                            // 再点同一门课：收起浮层
-                            selectedCourse = null
-                        } else {
-                            selectedCourse = course
-                            anchorRect = rect
+        } else {
+            ModeTabs(tab = tab, onTabChange = { tab = it })
+            if (tab == MODE_WEEK) {
+                val shownWeek = pagerState.currentPage + 1
+                val dates = weekDatesOf(schedule.semester.startDate, shownWeek)
+                val weekCourses = schedule.coursesOfWeek(shownWeek)
+                WeekNavBar(
+                    week = shownWeek,
+                    totalWeeks = totalWeeks,
+                    isCurrent = shownWeek == currentWeek,
+                    dateRange = dateRangeOf(dates),
+                    courseCount = weekCourses.size,
+                    onPrev = {
+                        scope.launch {
+                            pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0))
+                        }
+                    },
+                    onNext = {
+                        scope.launch {
+                            pagerState.animateScrollToPage(
+                                (pagerState.currentPage + 1).coerceAtMost(totalWeeks - 1),
+                            )
+                        }
+                    },
+                    onToday = {
+                        scope.launch {
+                            pagerState.animateScrollToPage((currentWeek - 1).coerceIn(0, totalWeeks - 1))
                         }
                     },
                 )
+                DayHeader(dates = dates, isCurrentWeek = shownWeek == currentWeek)
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) { page ->
+                    WeekGrid(
+                        courses = schedule.coursesOfWeek(page + 1),
+                        todayIndex = if (page + 1 == currentWeek) {
+                            LocalDate.now().dayOfWeek.value - 1
+                        } else {
+                            -1
+                        },
+                        onCourseClick = { course, rect ->
+                            val now = System.currentTimeMillis()
+                            // 浮层是独立窗口：点外面时它会先被关掉，这一次触摸就不能再当成
+                            // 「点课程」而把浮层又打开（否则同一个位置会反复弹）。
+                            if (now - lastDismissAt < 320L) {
+                                lastDismissAt = 0L
+                            } else if (selectedCourse == course) {
+                                // 再点同一门课：收起浮层
+                                selectedCourse = null
+                            } else {
+                                selectedCourse = course
+                                anchorRect = rect
+                            }
+                        },
+                    )
+                }
+            } else {
+                TodayTimeline(
+                    schedule = schedule,
+                    week = currentWeek,
+                    modifier = Modifier.weight(1f),
+                )
             }
-        } else {
-            WeekTabRow(tab = tab, onTabChange = { tab = it })
-            TodayList(
-                schedule = schedule,
-                week = currentWeek,
-                modifier = Modifier.weight(1f),
-            )
         }
     }
 
@@ -175,74 +186,92 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
 }
 
 /**
- * 「本周课表 / 今日课程」标签栏。
+ * 「周课表 / 今日课程」分段切换。
  *
- * 两个分支（看课表 / 看今日）共用这一个，避免出现「只有一边高亮」的问题：
- * 正在显示的那个用主题色实心填充 + 反色文字，另一个只留描边。
+ * 文案用「周课表」而不是「本周课表」：滑到第 12 周时还写「本周」跟屏幕上显示的周次对不上。
  */
 @Composable
-private fun WeekTabRow(tab: Int, onTabChange: (Int) -> Unit) {
-    TabRow(
-        tabs = listOf("本周课表", "今日课程"),
-        selectedTabIndex = tab,
-        onTabSelected = onTabChange,
-        colors = TabRowDefaults.tabRowColors(
-            backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
-            contentColor = MiuixTheme.colorScheme.onBackgroundVariant,
-            selectedBackgroundColor = MiuixTheme.colorScheme.primary,
-            selectedContentColor = MiuixTheme.colorScheme.onPrimary,
-        ),
+private fun ModeTabs(tab: Int, onTabChange: (Int) -> Unit) {
+    SegmentedTabs(
+        tabs = listOf("周课表", "今日课程"),
+        selectedIndex = tab,
+        onSelected = onTabChange,
         modifier = Modifier
-            .padding(horizontal = PAGE_PADDING)
-            .padding(top = 2.dp, bottom = 8.dp),
+            .padding(horizontal = Ui.Page)
+            .padding(top = 2.dp, bottom = 10.dp),
     )
 }
 
+/**
+ * 周导航：两头是图标按钮，中间才是「第几周 + 日期范围 + 几门课」。
+ *
+ * 之前是「上一周 / 第N周 / 回本周 / 下一周」四个文字按钮挤在一张卡片里，
+ * 中间那点位置既放不下周次也放不下日期。
+ */
 @Composable
-private fun WeekPagerHeader(
-    tab: Int,
-    onTabChange: (Int) -> Unit,
+private fun WeekNavBar(
     week: Int,
     totalWeeks: Int,
     isCurrent: Boolean,
+    dateRange: String?,
+    courseCount: Int,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onToday: () -> Unit,
 ) {
-    WeekTabRow(tab = tab, onTabChange = onTabChange)
-    Card(
+    val subtitle = listOfNotNull(dateRange, courseCount.toString() + " 门课").joinToString(" · ")
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = PAGE_PADDING),
-        cornerRadius = 14.dp,
-        insideMargin = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = Ui.Page)
+            .padding(bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+        CircleIconButton(
+            icon = MiuixIcons.ChevronBackward,
+            contentDescription = "上一周",
+            onClick = onPrev,
+            enabled = week > 1,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            TextButton(text = "上一周", onClick = onPrev)
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "第 " + week + " 周",
-                    style = MiuixTheme.textStyles.body1,
+                    style = MiuixTheme.textStyles.title4,
                     fontWeight = FontWeight.Medium,
                 )
-                Text(
-                    text = if (isCurrent) "本周" else "共 " + totalWeeks + " 周",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = if (isCurrent) MiuixTheme.colorScheme.primary
-                    else MiuixTheme.colorScheme.onBackgroundVariant,
-                )
+                Spacer(Modifier.width(8.dp))
+                if (isCurrent) {
+                    StatusPill(
+                        text = "本周",
+                        container = MiuixTheme.colorScheme.primary.copy(alpha = 0.14f),
+                        content = MiuixTheme.colorScheme.primary,
+                    )
+                } else {
+                    StatusPill(
+                        text = "回到本周",
+                        container = MiuixTheme.colorScheme.surfaceContainerHigh,
+                        content = MiuixTheme.colorScheme.primary,
+                        onClick = onToday,
+                    )
+                }
             }
-            if (!isCurrent) {
-                TextButton(text = "回本周", onClick = onToday)
-            }
-            TextButton(text = "下一周", onClick = onNext)
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = subtitle,
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+            )
         }
+        CircleIconButton(
+            icon = MiuixIcons.ChevronForward,
+            contentDescription = "下一周",
+            onClick = onNext,
+            enabled = week < totalWeeks,
+        )
     }
 }
 
@@ -255,62 +284,102 @@ private fun currentWeekOf(schedule: Schedule): Int {
     return ((days / 7).toInt() + 1).coerceIn(1, total)
 }
 
-@Composable
-private fun EmptyState(onImport: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(24.dp)) {
-            Text(
-                text = "还没有课表",
-                style = MiuixTheme.textStyles.title3,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "用学号登录学校统一身份认证，一次导入整个学期的课表。数据只保存在本机。",
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(20.dp))
-            Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                Text("导入课表", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-            }
-        }
-    }
+/**
+ * 第 week 周周一 ~ 周日。
+ *
+ * 学期开始日期缺失或者解析不了时返回 7 个 null，表头退化成只显示星期几，
+ * 不会因为一份没有日期的课表就崩或者错位。
+ */
+private fun weekDatesOf(startDate: String, week: Int): List<LocalDate?> {
+    val start = runCatching { LocalDate.parse(startDate) }.getOrNull()
+        ?: return List(7) { null }
+    val monday = start.plusWeeks((week - 1).toLong())
+    return (0..6).map { monday.plusDays(it.toLong()) }
 }
 
+private val RANGE_FORMAT = DateTimeFormatter.ofPattern("M/d")
+
+/** 「11/17 – 11/23」；没有日期就返回 null。 */
+private fun dateRangeOf(dates: List<LocalDate?>): String? {
+    val first = dates.firstOrNull() ?: return null
+    val last = dates.lastOrNull() ?: return null
+    return first.format(RANGE_FORMAT) + " – " + last.format(RANGE_FORMAT)
+}
+
+/** 课表里每一天的列宽。7 列各留一份 CellGap，加起来正好铺满可用宽度。 */
+private fun dayColumnWidth(maxWidth: Dp): Dp =
+    (maxWidth - Ui.PeriodGutter - Ui.CellGap * 7) / 7
+
+/** 表头：星期几 + 日期，今天那一列用主题色标出来。 */
 @Composable
-private fun DayHeader() {
-    Row(
+private fun DayHeader(dates: List<LocalDate?>, isCurrentWeek: Boolean) {
+    val today = LocalDate.now()
+    // 壁纸模式下表头直接压在图上，给它一条半透明底，保证「周几 + 日号」读得清
+    val onWallpaper = LocalWallpaperActive.current
+    // 列宽必须用跟 WeekGrid 同一套算法：这里差一点，表头的星期几就跟底下的格子错开
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = PAGE_PADDING),
+            .padding(horizontal = Ui.Page),
     ) {
-        Spacer(Modifier.width(PERIOD_GUTTER))
-        DAY_LABELS.forEach { label ->
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text(
-                    text = label,
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = gutterColor(),
+        val dayWidth = dayColumnWidth(maxWidth)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    if (onWallpaper) MiuixTheme.colorScheme.surface.copy(alpha = 0.55f)
+                    else Color.Transparent,
                 )
+                .padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.width(Ui.PeriodGutter))
+            dates.forEachIndexed { index, date ->
+                val isToday = isCurrentWeek && date != null && date == today
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = Ui.CellGap / 2)
+                        .width(dayWidth)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isToday) MiuixTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            else Color.Transparent,
+                        )
+                        .padding(vertical = 3.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = DAY_LABELS[index],
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = if (isToday) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onBackgroundVariant
+                        },
+                    )
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = date?.dayOfMonth?.toString() ?: "·",
+                        style = MiuixTheme.textStyles.footnote1,
+                        fontWeight = if (isToday) FontWeight.Medium else FontWeight.Normal,
+                        color = if (isToday) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onBackground
+                        },
+                    )
+                }
             }
         }
     }
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(6.dp))
 }
 
+/** 走字位（第几节 + 上课时间）的颜色：壁纸模式下不能再用低对比的次要色。 */
 @Composable
 private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
-    MiuixTheme.colorScheme.onBackground.copy(alpha = 0.75f)
+    MiuixTheme.colorScheme.onBackground
 } else {
     MiuixTheme.colorScheme.onBackgroundVariant
 }
@@ -321,17 +390,25 @@ private fun rowIndexOf(period: Int): Int =
 @Composable
 private fun WeekGrid(
     courses: List<Course>,
+    todayIndex: Int,
     onCourseClick: (Course, Rect) -> Unit,
 ) {
     val wallpaper = LocalWallpaperActive.current
     val rects = remember { HashMap<Course, Rect>() }
+    val slotColor = if (wallpaper) {
+        MiuixTheme.colorScheme.surface.copy(alpha = 0.55f)
+    } else {
+        MiuixTheme.colorScheme.surfaceContainer
+    }
+    val todaySlotColor = lerp(slotColor, MiuixTheme.colorScheme.primary, 0.12f)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = PAGE_PADDING),
+            .padding(horizontal = Ui.Page),
     ) {
         val rowHeight: Dp = maxHeight / ROW_COUNT
-        val dayWidth: Dp = (maxWidth - PERIOD_GUTTER - CELL_GAP * 6) / 7
+        val dayWidth: Dp = dayColumnWidth(maxWidth)
+        val step: Dp = dayWidth + Ui.CellGap
         Box(modifier = Modifier.fillMaxSize()) {
             schoolBigPeriods.forEach { bp ->
                 Row(
@@ -342,13 +419,14 @@ private fun WeekGrid(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.width(PERIOD_GUTTER),
+                        modifier = Modifier.width(Ui.PeriodGutter),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
                             text = bp.periods,
                             style = MiuixTheme.textStyles.footnote2,
                             fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
                             color = gutterColor(),
                         )
                         Text(
@@ -357,24 +435,15 @@ private fun WeekGrid(
                             fontSize = 9.sp,
                             color = gutterColor(),
                         )
-                        Text(
-                            text = bp.endTime,
-                            style = MiuixTheme.textStyles.footnote2,
-                            fontSize = 9.sp,
-                            color = gutterColor(),
-                        )
                     }
                     for (d in 0 until 7) {
                         Box(
                             modifier = Modifier
-                                .padding(horizontal = CELL_GAP / 2)
+                                .padding(horizontal = Ui.CellGap / 2)
                                 .width(dayWidth)
-                                .height(rowHeight - CELL_GAP)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (wallpaper) MiuixTheme.colorScheme.surface.copy(alpha = 0.55f)
-                                    else MiuixTheme.colorScheme.surfaceContainer,
-                                ),
+                                .height(rowHeight - Ui.CellGap)
+                                .clip(RoundedCornerShape(Ui.CellCorner))
+                                .background(if (d == todayIndex) todaySlotColor else slotColor),
                         )
                     }
                 }
@@ -382,13 +451,16 @@ private fun WeekGrid(
             courses.forEach { course ->
                 val startRow = rowIndexOf(course.startPeriod)
                 val endRow = rowIndexOf(course.endPeriod)
-                val x = PERIOD_GUTTER + (dayWidth + CELL_GAP) * (course.dayOfWeek - 1)
+                val x = Ui.PeriodGutter + step * (course.dayOfWeek - 1)
                 val y = rowHeight * startRow
+                // 格子外框按「列宽 + 净间距」算，格子自己再各缩进半个间距，
+                // 这样上下相邻的两门课之间也会留出缝，不会糊成一片。
+                val w = dayWidth + Ui.CellGap
                 val h = rowHeight * (endRow - startRow + 1)
                 Box(
                     modifier = Modifier
                         .offset(x = x, y = y)
-                        .width(dayWidth)
+                        .width(w)
                         .height(h)
                         .onGloballyPositioned { coords ->
                             rects[course] = coords.boundsInRoot()
@@ -406,46 +478,72 @@ private fun WeekGrid(
     }
 }
 
+/**
+ * 课表格子。
+ *
+ * 整格平铺课程色（识别色混进中性表面），课名用主题前景色而不是硬编码白字 ——
+ * 原来 14 种高饱和色块 + 白字，整屏像一张彩虹拼图，浅色模式下白字还常常不够清楚。
+ * 左侧那条 3dp 色条已经去掉：颜色直接铺满整格，识别一样在，格子边缘也干净。
+ */
 @Composable
 private fun CourseCell(course: Course) {
-    val colored = course.color != 0
-    Card(
+    val onWallpaper = LocalWallpaperActive.current
+    val shape = RoundedCornerShape(Ui.CellCorner)
+    val fill = courseTint(course.color).let {
+        if (onWallpaper) it.copy(alpha = Ui.CellOnWallpaper) else it
+    }
+    val ink = courseInk(fill)
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .padding(CELL_GAP / 2),
-        cornerRadius = 12.dp,
-        insideMargin = PaddingValues(horizontal = 5.dp, vertical = 6.dp),
-        colors = CardDefaults.defaultColors(
-            color = if (colored) Color(course.color) else MiuixTheme.colorScheme.primaryContainer,
-            contentColor = if (colored) Color.White else MiuixTheme.colorScheme.onPrimaryContainer,
-        ),
+            .padding(Ui.CellGap / 2)
+            .clip(shape)
+            .background(fill),
     ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 一格放得下多少字，按它自己的高度算。
+        // 屏幕上只有 5 行大节，矮屏一格可能只有 70dp 出头，写死行数会把地点挤到卡片外面被裁掉。
+        val avail = maxHeight - 10.dp
+        val nameLine = 14.dp // 11sp 中文实际占一行的高度（含行距）
+        val roomLine = 12.dp
+        val roomGap = 3.dp
+        val roomLines = when {
+            avail >= nameLine * 3 + roomGap + roomLine * 2 -> 2
+            avail >= nameLine * 3 + roomGap + roomLine -> 1
+            else -> 0
+        }
+        val roomBlock = if (roomLines > 0) roomGap + roomLine * roomLines else 0.dp
+        val nameLines = ((avail - roomBlock) / nameLine).toInt().coerceIn(1, 6)
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 5.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = course.name,
+                style = MiuixTheme.textStyles.footnote2,
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = ink.primary,
+                textAlign = TextAlign.Center,
+                maxLines = nameLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (roomLines > 0 && course.room.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    text = course.name,
+                    text = shortRoom(course.room),
                     style = MiuixTheme.textStyles.footnote2,
-                    fontSize = 11.sp,
-                    lineHeight = 13.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
                     textAlign = TextAlign.Center,
-                    maxLines = 4,
+                    color = ink.secondary,
+                    maxLines = roomLines,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (course.room.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = shortRoom(course.room),
-                        style = MiuixTheme.textStyles.footnote2,
-                        fontSize = 9.sp,
-                        lineHeight = 11.sp,
-                        textAlign = TextAlign.Center,
-                        color = if (colored) Color.White.copy(alpha = 0.88f)
-                        else MiuixTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
         }
     }
@@ -479,23 +577,26 @@ private class CoursePopupPositionProvider(private val anchor: Rect) : PopupPosit
     }
 }
 
+/**
+ * 点课程后的详情浮层。
+ *
+ * 除了课程名、地点、教师、节次，补上了原来自上而下一直没露面的「上课时段」和「周次」——
+ * Course 里本来就有，只是之前没显示。
+ */
 @Composable
-/** 点课程后的详情浮层：只留课程名、地点、教师、时间（点外面关闭）。 */
 private fun CourseDetailCard(course: Course) {
+    val accent = courseAccent(course.color)
     Card(
-        modifier = Modifier.width(250.dp),
-        cornerRadius = 16.dp,
-        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        modifier = Modifier.width(266.dp),
+        cornerRadius = 18.dp,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (course.color != 0) Color(course.color)
-                        else MiuixTheme.colorScheme.primary,
-                    ),
+                    .background(accent),
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -503,143 +604,301 @@ private fun CourseDetailCard(course: Course) {
                 style = MiuixTheme.textStyles.title4,
             )
         }
-        Spacer(Modifier.height(10.dp))
-        DetailRow(label = "上课地点", value = course.room.ifBlank { "—" })
-        Spacer(Modifier.height(6.dp))
-        DetailRow(label = "教师姓名", value = course.teacher.ifBlank { "—" })
-        Spacer(Modifier.height(6.dp))
-        DetailRow(
-            label = "上课时间",
+        if (course.weeksText.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = course.weeksText,
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                modifier = Modifier.padding(start = 18.dp),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Hairline()
+        Spacer(Modifier.height(8.dp))
+        InfoRow(label = "地点", value = course.room.ifBlank { "—" })
+        InfoRow(label = "教师", value = course.teacher.ifBlank { "—" })
+        InfoRow(
+            label = "节次",
             value = "周" + DAY_LABELS[course.dayOfWeek - 1] + " 第 " + course.periodText + " 节",
         )
+        val first = schoolLessonTimes[course.startPeriod]
+        val last = schoolLessonTimes[course.endPeriod]
+        if (first != null && last != null) {
+            InfoRow(label = "时间", value = first.first + " - " + last.second)
+        }
     }
 }
 
-@Composable
-private fun DetailRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            style = MiuixTheme.textStyles.footnote1,
-            color = MiuixTheme.colorScheme.onBackgroundVariant,
-            modifier = Modifier.width(64.dp),
-        )
-        Text(text = value, style = MiuixTheme.textStyles.footnote1)
-    }
-}
+private const val STATUS_DONE = 0
+private const val STATUS_ONGOING = 1
+private const val STATUS_TODO = 2
 
+/**
+ * 今日课程：左边时间、中间状态点、右边课程卡。
+ *
+ * 原来「nb上完一节课 / nb又又又上完一节课」是直接怼在卡片右侧当进度文案用的，
+ * 上完第四节就能拉出十个字，把课名挤没。现在状态交给右上角的胶囊（未开始 / 进行中 / 已完成），
+ * 梗缩小成已完成课程下面的一行小字，只在上完课之后出现。
+ */
 @Composable
-private fun TodayList(schedule: Schedule, week: Int, modifier: Modifier = Modifier) {
-    val today = LocalDate.now().dayOfWeek.value
+private fun TodayTimeline(schedule: Schedule, week: Int, modifier: Modifier = Modifier) {
+    val today = LocalDate.now()
     val todayCourses = schedule.coursesOfWeek(week)
-        .filter { it.dayOfWeek == today }
+        .filter { it.dayOfWeek == today.dayOfWeek.value }
         .sortedBy { it.startPeriod }
-    Column(modifier = modifier.fillMaxSize()) {
+    val now = LocalTime.now()
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = Ui.Page),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "今天",
+                style = MiuixTheme.textStyles.title4,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = today.format(DateTimeFormatter.ofPattern("M月d日")) +
+                    " 周" + DAY_LABELS[today.dayOfWeek.value - 1] +
+                    " · 共 " + todayCourses.size + " 门课",
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+
         if (todayCourses.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Weeks,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(text = "今天没有课", style = MiuixTheme.textStyles.title4)
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "今天没有课",
-                    style = MiuixTheme.textStyles.title4,
-                    color = gutterColor(),
+                    text = "好好休息一下",
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
                 )
             }
             return@Column
         }
-        // 按当前时间判断哪些课已经上完；第 k 节上完的课，前面加 (k-1) 个「又」
-        val now = LocalTime.now()
+
+        // 第 k 节上完的课，下面那行小字前面加 (k-1) 个「又」
         var finishedCount = 0
-        // 今天的课是不是全上完了（全上完就在下面空白处提示一句）
-        val allFinished = todayCourses.all { c ->
-            val end = schoolLessonTimes[c.endPeriod]?.second
-            end != null && runCatching { !now.isBefore(LocalTime.parse(end)) }.getOrDefault(false)
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = PAGE_PADDING),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        var allFinished = true
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             todayCourses.forEach { course ->
                 val endTime = schoolLessonTimes[course.endPeriod]?.second
+                val startTime = schoolLessonTimes[course.startPeriod]?.first
                 val done = endTime != null && runCatching {
                     !now.isBefore(LocalTime.parse(endTime))
                 }.getOrDefault(false)
-                val progressText = if (done) {
-                    "nb" + "又".repeat(finishedCount) + "上完一节课"
-                } else {
-                    "未完成"
+                val ongoing = !done && startTime != null && runCatching {
+                    !now.isBefore(LocalTime.parse(startTime))
+                }.getOrDefault(false)
+                if (!done) allFinished = false
+                val status = when {
+                    done -> STATUS_DONE
+                    ongoing -> STATUS_ONGOING
+                    else -> STATUS_TODO
                 }
+                TodayCourseRow(
+                    course = course,
+                    startTime = startTime,
+                    endTime = endTime,
+                    status = status,
+                    finishedCount = if (done) finishedCount else 0,
+                )
                 if (done) finishedCount++
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    cornerRadius = 14.dp,
-                    insideMargin = PaddingValues(14.dp),
-                    colors = CardDefaults.defaultColors(
-                        color = if (course.color != 0) Color(course.color).copy(alpha = 0.18f)
-                        else MiuixTheme.colorScheme.surfaceContainer,
-                        contentColor = MiuixTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    // 左边课程信息，右边进度文案 —— 文案靠右且相对整张卡片垂直居中
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = course.name,
-                                style = MiuixTheme.textStyles.title4,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = timeText(course),
-                                style = MiuixTheme.textStyles.body2,
-                                color = MiuixTheme.colorScheme.onBackgroundVariant,
-                            )
-                            if (course.room.isNotBlank()) {
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = course.room,
-                                    style = MiuixTheme.textStyles.footnote1,
-                                    color = MiuixTheme.colorScheme.onBackgroundVariant,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = progressText,
-                            style = MiuixTheme.textStyles.footnote1,
-                            color = if (done) MiuixTheme.colorScheme.primary
-                            else MiuixTheme.colorScheme.onBackgroundVariant,
-                        )
-                    }
-                }
             }
 
-            // 今天的课全部上完：在下方的空白区域居中提示一句
             if (allFinished) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 36.dp, bottom = 24.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 18.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
+                    StatusPill(
                         text = "已完成今日所有课程",
-                        style = MiuixTheme.textStyles.title4,
-                        color = MiuixTheme.colorScheme.primary,
+                        container = MiuixTheme.colorScheme.primary.copy(alpha = 0.14f),
+                        content = MiuixTheme.colorScheme.primary,
                     )
                 }
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+@Composable
+private fun TodayCourseRow(
+    course: Course,
+    startTime: String?,
+    endTime: String?,
+    status: Int,
+    finishedCount: Int,
+) {
+    val accent = courseAccent(course.color)
+    // 今日课程卡片信息更多（状态胶囊 + 地点教师），颜色铺得比课表格子淡一点
+    val cardFill = courseTint(course.color, strength = 0.55f)
+    val ink = courseInk(cardFill)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.width(48.dp)) {
+            Text(
+                text = startTime ?: "—",
+                style = MiuixTheme.textStyles.body2,
+                fontWeight = if (status == STATUS_ONGOING) FontWeight.Medium else FontWeight.Normal,
+                color = if (status == STATUS_ONGOING) {
+                    MiuixTheme.colorScheme.primary
+                } else {
+                    MiuixTheme.colorScheme.onBackground
+                },
+            )
+            Text(
+                text = endTime ?: "",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        // 状态点：进行中是实心，已完成是空心描边，未开始是最浅的一圈
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(
+                    when (status) {
+                        STATUS_ONGOING -> accent
+                        STATUS_DONE -> accent.copy(alpha = 0.35f)
+                        else -> MiuixTheme.colorScheme.onBackgroundVariant.copy(alpha = 0.35f)
+                    },
+                ),
+        )
+        Spacer(Modifier.width(12.dp))
+        Card(
+            modifier = Modifier.weight(1f),
+            cornerRadius = 14.dp,
+            insideMargin = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+            colors = CardDefaults.defaultColors(
+                color = cardFill,
+                contentColor = ink.primary,
+            ),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = course.name,
+                    style = MiuixTheme.textStyles.title4,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(8.dp))
+                // 胶囊用不透明底色，免得压在课程色上时对比度跟着底色一起飘
+                when (status) {
+                    STATUS_DONE -> StatusPill(
+                        text = "已完成",
+                        container = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        content = MiuixTheme.colorScheme.primary,
+                    )
+
+                    STATUS_ONGOING -> StatusPill(
+                        text = "进行中",
+                        container = MiuixTheme.colorScheme.primary,
+                        content = MiuixTheme.colorScheme.onPrimary,
+                    )
+
+                    else -> StatusPill(
+                        text = "未开始",
+                        container = MiuixTheme.colorScheme.surfaceContainerHighest,
+                        content = MiuixTheme.colorScheme.onBackgroundVariant,
+                    )
+                }
+            }
+            val detail = listOf(course.room, course.teacher)
+                .filter { it.isNotBlank() }
+                .joinToString(" · ")
+            if (detail.isNotBlank()) {
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    text = detail,
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = ink.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (status == STATUS_DONE) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "nb" + "又".repeat(finishedCount) + "上完一节课",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = ink.primary,
+                )
             }
         }
     }
 }
 
-private fun timeText(course: Course): String {
-    val first = schoolLessonTimes[course.startPeriod]
-    val last = schoolLessonTimes[course.endPeriod]
-    val range = "第 " + course.periodText + " 节"
-    return if (first != null && last != null) {
-        range + "   " + first.first + " - " + last.second
-    } else {
-        range
+@Composable
+private fun EmptyState(onImport: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 28.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Weeks,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = MiuixTheme.colorScheme.primary,
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = "还没有课表",
+            style = MiuixTheme.textStyles.title3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "用学号登录学校统一身份认证，一次导入整个学期的课表。\n课表只保存在这台手机上。",
+            style = MiuixTheme.textStyles.body2,
+            color = MiuixTheme.colorScheme.onBackgroundVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(26.dp))
+        Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
+            Text("导入课表", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+        }
     }
 }

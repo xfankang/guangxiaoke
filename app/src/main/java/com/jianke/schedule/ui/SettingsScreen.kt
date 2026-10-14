@@ -2,7 +2,6 @@ package com.jianke.schedule.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,22 +17,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.Wallpaper
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Background
+import top.yukonga.miuix.kmp.icon.extended.Image
+import top.yukonga.miuix.kmp.icon.extended.ListView
+import top.yukonga.miuix.kmp.icon.extended.WorldClock
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private val DARK_TABS = listOf("跟随系统", "浅色", "深色")
 
 @Composable
 fun SettingsScreen(
-    dark: Boolean,
-    onDarkChange: (Boolean) -> Unit,
+    darkOverride: Boolean?,
+    onDarkOverrideChange: (Boolean?) -> Unit,
     dock: Boolean,
     onDockChange: (Boolean) -> Unit,
     hasWallpaper: Boolean,
@@ -76,57 +82,64 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        SmallTitle(text = "外观", modifier = Modifier.padding(horizontal = 16.dp))
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            cornerRadius = 16.dp,
-            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        ) {
-            SwitchRow(
+        Spacer(Modifier.height(4.dp))
+
+        SectionHeader("外观")
+        SettingsCard {
+            SettingRow(
+                icon = MiuixIcons.Background,
                 title = "深色模式",
-                subtitle = "打开为黑色界面，关闭为白色界面",
-                checked = dark,
-                onCheckedChange = onDarkChange,
+                summary = "跟随系统时与手机的深浅色保持一致",
             )
+            Spacer(Modifier.height(8.dp))
+            // 三选一而不是一个开关：开关表达不了「跟随系统」，
+            // 用户一旦拨过就再也回不到跟系统走的状态了。
+            SegmentedTabs(
+                tabs = DARK_TABS,
+                selectedIndex = when (darkOverride) {
+                    null -> 0
+                    false -> 1
+                    true -> 2
+                },
+                onSelected = { index ->
+                    onDarkOverrideChange(
+                        when (index) {
+                            0 -> null
+                            1 -> false
+                            else -> true
+                        },
+                    )
+                },
+            )
+            Spacer(Modifier.height(6.dp))
         }
 
-        Spacer(Modifier.height(14.dp))
-        SmallTitle(text = "壁纸", modifier = Modifier.padding(horizontal = 16.dp))
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            cornerRadius = 16.dp,
-            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        ) {
-            Text(text = "界面背景", style = MiuixTheme.textStyles.body1)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = if (hasWallpaper) "当前：自定义壁纸" else "当前：默认背景",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
+        SectionHeader("壁纸")
+        SettingsCard {
+            SettingRow(
+                icon = MiuixIcons.Image,
+                title = "界面背景",
+                summary = if (hasWallpaper) "当前：自定义壁纸" else "当前：默认背景",
             )
-            Spacer(Modifier.height(10.dp))
-            Row {
+            Spacer(Modifier.height(2.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
                 TextButton(
                     text = "选择图片",
                     onClick = { pickImage.launch("image/*") },
+                    modifier = Modifier.weight(1f),
                 )
                 if (hasWallpaper) {
-                    Spacer(Modifier.padding(horizontal = 4.dp))
                     TextButton(
                         text = "调整位置",
                         onClick = {
-                            val t = com.jianke.schedule.data.Prefs.wallpaperOffset(context)
-                            editScale = com.jianke.schedule.data.Prefs.wallpaperScale(context)
+                            val t = Prefs.wallpaperOffset(context)
+                            editScale = Prefs.wallpaperScale(context)
                             editFracX = t.first
                             editFracY = t.second
                             editing = runCatching { Wallpaper.load(context) }.getOrNull()
                         },
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.padding(horizontal = 4.dp))
                     TextButton(
                         text = "恢复默认",
                         onClick = {
@@ -134,60 +147,42 @@ fun SettingsScreen(
                             hint = "已恢复默认背景"
                             onWallpaperChanged()
                         },
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
             if (hint.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
                 Text(
                     text = hint,
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.primary,
                 )
             }
+            Spacer(Modifier.height(6.dp))
         }
 
-        Spacer(Modifier.height(14.dp))
-        SmallTitle(text = "底栏", modifier = Modifier.padding(horizontal = 16.dp))
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            cornerRadius = 16.dp,
-            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        ) {
-            SwitchRow(
+        SectionHeader("底栏")
+        SettingsCard {
+            SettingRow(
+                icon = MiuixIcons.ListView,
                 title = "悬浮 Dock 栏",
-                subtitle = "打开为悬浮胶囊样式，关闭为贴边状态栏",
-                checked = dock,
-                onCheckedChange = onDockChange,
+                summary = "打开为悬浮胶囊样式，关闭为贴边状态栏",
+                trailing = {
+                    Switch(checked = dock, onCheckedChange = onDockChange)
+                },
             )
         }
 
-        Spacer(Modifier.height(14.dp))
-        SmallTitle(text = "其他", modifier = Modifier.padding(horizontal = 16.dp))
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            cornerRadius = 16.dp,
-            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showEgg = true }
-                    .padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "最初的起点",
-                    style = MiuixTheme.textStyles.body1,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        SectionHeader("其他")
+        SettingsCard {
+            SettingRow(
+                icon = MiuixIcons.WorldClock,
+                title = "最初的起点",
+                showChevron = true,
+                onClick = { showEgg = true },
+            )
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
     }
 
     val bmp = editing
@@ -211,23 +206,26 @@ fun SettingsScreen(
     }
 }
 
+/** 分区小标题，左右边距跟卡片对齐。 */
 @Composable
-private fun SwitchRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MiuixTheme.textStyles.body1)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+private fun SectionHeader(text: String) {
+    SmallTitle(
+        text = text,
+        modifier = Modifier.padding(horizontal = Ui.Page),
+    )
+}
+
+/** 设置页统一用的卡片：同样的圆角、同样的左右边距、同样的行内边距。 */
+@Composable
+private fun SettingsCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Ui.Page)
+            .padding(bottom = Ui.SectionGap),
+        cornerRadius = Ui.CardCorner,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        content()
     }
 }
