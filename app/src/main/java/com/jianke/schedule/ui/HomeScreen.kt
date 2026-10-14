@@ -61,6 +61,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
@@ -74,6 +75,9 @@ import java.time.temporal.ChronoUnit
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 private const val ROW_COUNT = 5
 private const val MODE_WEEK = 0
+
+// 课表超过这么多天没更新就提醒一次（学校可能临时调课）
+private const val STALE_DAYS = 7
 
 @Composable
 fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
@@ -99,6 +103,7 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
             EmptyState(onImport = onImport)
         } else {
             ModeTabs(tab = tab, onTabChange = { tab = it })
+            StaleHint(updatedAt = schedule.updatedAt, onImport = onImport)
             if (tab == MODE_WEEK) {
                 val shownWeek = pagerState.currentPage + 1
                 val dates = weekDatesOf(schedule.semester.startDate, shownWeek)
@@ -377,6 +382,36 @@ private fun DayHeader(dates: List<LocalDate?>, isCurrentWeek: Boolean) {
 }
 
 /** 走字位（第几节 + 上课时间）的颜色：壁纸模式下不能再用低对比的次要色。 */
+/**
+ * 课表太久没更新时的提醒条。
+ *
+ * 学校会不定时调课（换教室、改时间、临时加课），但教务系统不会推送通知，
+ * 只能靠用户主动重新拉一次。所以超过一周没更新就提示一下，点右边直接更新。
+ */
+@Composable
+private fun StaleHint(updatedAt: Long, onImport: () -> Unit) {
+    if (updatedAt <= 0L) return
+    val days = ((System.currentTimeMillis() - updatedAt) / 86_400_000L).toInt()
+    if (days < STALE_DAYS) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Ui.Page)
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(Ui.CardCorner))
+            .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f))
+            .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "课表已 " + days + " 天没更新，学校可能已调课",
+            style = MiuixTheme.textStyles.footnote1,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(text = "立即更新", onClick = onImport)
+    }
+}
+
 @Composable
 private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
     MiuixTheme.colorScheme.onBackground
@@ -431,6 +466,13 @@ private fun WeekGrid(
                         )
                         Text(
                             text = bp.startTime,
+                            style = MiuixTheme.textStyles.footnote2,
+                            fontSize = 9.sp,
+                            color = gutterColor(),
+                        )
+                        // 下课时间：改版时漏掉了，补回来
+                        Text(
+                            text = bp.endTime,
                             style = MiuixTheme.textStyles.footnote2,
                             fontSize = 9.sp,
                             color = gutterColor(),
