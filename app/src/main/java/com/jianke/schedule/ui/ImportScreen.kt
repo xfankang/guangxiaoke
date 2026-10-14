@@ -11,9 +11,11 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -25,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.jianke.schedule.data.ApiValidator
@@ -39,6 +43,7 @@ import com.jianke.schedule.web.ApiProbeJs
 import com.jianke.schedule.web.ScheduleJs
 import com.jianke.schedule.web.SchoolEndpoints
 import org.json.JSONObject
+import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -352,11 +357,26 @@ fun ImportScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(horizontal = Ui.Page)
+                        .padding(vertical = 8.dp),
+                    cornerRadius = Ui.CardCorner,
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                 ) {
-                    Text(text = status)
-                    Row {
-                        TextButton(text = "完成", onClick = { onImported(importedCount) })
+                    Text(
+                        text = status,
+                        style = MiuixTheme.textStyles.body1,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { onImported(importedCount) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("完成", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    // 排查用的复制按钮竖着排：横着并排三四个 TextButton 在窄屏上会互相挤
+                    Column {
                         TextButton(
                             text = "复制页面结构",
                             onClick = {
@@ -364,6 +384,7 @@ fun ImportScreen(
                                 cm.setPrimaryClip(ClipData.newPlainText("gxk", lastRaw))
                                 status = "页面结构已复制"
                             },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         TextButton(
                             text = "复制周次核对表",
@@ -374,6 +395,7 @@ fun ImportScreen(
                                 )
                                 status = "周次核对表已复制"
                             },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         val probe = apiProbeRaw
                         if (probe != null) {
@@ -384,6 +406,7 @@ fun ImportScreen(
                                     cm.setPrimaryClip(ClipData.newPlainText("gxk", probe))
                                     status = "接口原始数据已复制"
                                 },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -394,7 +417,10 @@ fun ImportScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(horizontal = Ui.Page)
+                        .padding(vertical = 8.dp),
+                    cornerRadius = Ui.CardCorner,
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                 ) {
                     Text(text = "直连接口没通过校验（已用页面解析，课表是对的）。把下面内容发给开发者可定位接口问题：")
                     TextButton(
@@ -419,7 +445,10 @@ fun ImportScreen(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(horizontal = Ui.Page)
+                        .padding(vertical = 8.dp),
+                    cornerRadius = Ui.CardCorner,
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                 ) {
                     Text(text = "没有解析出课程。把下面的内容复制发给开发者即可定位问题：")
                     TextButton(
