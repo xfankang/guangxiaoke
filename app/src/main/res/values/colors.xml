@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与吉祥物圆盘同色，自适应图标背景 -->
+    <color name="ic_launcher_background">#C7E1EC</color>
+</resources>

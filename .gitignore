@@ -1,0 +1,25 @@
+# 构建产物
+*.iml
+.gradle/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 本机路径（含 SDK 位置，不该进仓库）
+local.properties
+
+# IDE
+.idea/
+*.hprof
+
+# ★ 签名与密码：绝对不要提交
+keystore.properties
+keystore/
+*.jks
+*.keystore
+
+# 系统
+.DS_Store
+Thumbs.db
