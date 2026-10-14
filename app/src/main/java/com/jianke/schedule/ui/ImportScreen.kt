@@ -10,6 +10,8 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -21,10 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -36,8 +40,10 @@ import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.Diagnostics
 import com.jianke.schedule.data.MobileDomParser
 import com.jianke.schedule.data.ScheduleBuilder
+import com.jianke.schedule.data.ScheduleDiff
 import com.jianke.schedule.data.ScheduleMerger
 import com.jianke.schedule.data.ScheduleStore
+import com.jianke.schedule.data.diffSchedule
 import com.jianke.schedule.data.ZfsoftParser
 import com.jianke.schedule.web.ApiProbeJs
 import com.jianke.schedule.web.ScheduleJs
@@ -80,9 +86,15 @@ private class ScanState {
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
+/**
+ * @param silent 静默模式：打开 App 时后台检查有没有调课。会话过期就悄悄退出，
+ *        不打扰用户；有变化才弹提示。
+ */
 fun ImportScreen(
     onCancel: () -> Unit,
     onImported: (Int) -> Unit,
+    silent: Boolean = false,
+    onSilentDone: (ScheduleDiff?) -> Unit = {},
 ) {
     val context = LocalContext.current
     var status by remember { mutableStateOf("正在打开统一身份认证…") }
@@ -92,6 +104,9 @@ fun ImportScreen(
     var apiReport by remember { mutableStateOf<String?>(null) }
     var apiProbeRaw by remember { mutableStateOf<String?>(null) }
     var importedCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
+    // 静默模式：本次拉取和上一版课表的差异
+    var silentDiff by remember { mutableStateOf<ScheduleDiff?>(null) }
+    var silentDone by remember { mutableStateOf(false) }
     val scan = remember { ScanState() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -108,8 +123,10 @@ fun ImportScreen(
     }
 
     fun persist(courses: List<Course>, bodyText: String, weeks: List<Int>) {
+        val previous = runCatching { ScheduleStore.load(context) }.getOrNull()
         val schedule = ScheduleBuilder.build(bodyText, courses, weeks)
         ScheduleStore.save(context, schedule)
+        if (silent) silentDiff = diffSchedule(previous, schedule)
         importedCourses = courses
         importedCount = courses.size
         // 把登录后的 cookie 落盘。这样「更新课表」再进来时，只要会话还没过期
@@ -122,6 +139,10 @@ fun ImportScreen(
         scan.finished = true
         persist(courses, bodyText, weeks)
         status = "已导入 " + courses.size + " 门课（" + via + "）"
+        if (silent && !silentDone) {
+            silentDone = true
+            onSilentDone(silentDiff)
+        }
     }
 
     fun startSlowScan() {
@@ -330,6 +351,17 @@ fun ImportScreen(
         if (!ok) finishWithWeekMap() else inject(ScheduleJs.scrapeScript, 1400L)
     }
 
+    // 静默模式下给个总超时：会话过期会停在登录页，不能一直等
+    LaunchedEffect(Unit) {
+        if (!silent) return@LaunchedEffect
+        kotlinx.coroutines.delay(15_000L)
+        if (!scan.finished && !silentDone) {
+            scan.finished = true
+            silentDone = true
+            onSilentDone(null)
+        }
+    }
+
     val handleMessage: (String, String) -> Unit = { kind, payload ->
         when (kind) {
             "api" -> handleApi(payload)
@@ -340,6 +372,7 @@ fun ImportScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -557,5 +590,27 @@ fun ImportScreen(
                 },
             )
         }
+    }
+
+    // 静默模式：把上面的界面整个盖住，只显示一行提示。
+    // WebView 仍在下面正常加载，只是用户看不见。
+    if (silent) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MiuixTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = "正在检查课表更新…", style = MiuixTheme.textStyles.title4)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = status,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
+                )
+            }
+        }
+    }
     }
 }

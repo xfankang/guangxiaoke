@@ -75,9 +75,20 @@ import java.time.temporal.ChronoUnit
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 private const val ROW_COUNT = 5
 private const val MODE_WEEK = 0
+private const val MODE_TODAY = 1
+private const val MODE_UPDATE = 2
 
 // 课表超过这么多天没更新就提醒一次（学校可能临时调课）
 private const val STALE_DAYS = 7
+
+/**
+ * 提醒用户定期更新课表。
+ *
+ * 教务系统不会推送调课通知，而登录有验证码、CAS 票据一次性，
+ * App 没法在后台自动重登，所以只能靠用户自己隔段时间点一次更新。
+ */
+const val UPDATE_WARNING = "由于无法实现实时更新课表，为了防止学校临时更改课表导致的课表不准确，" +
+    "建议同学们一周至少更新一次课表，保持课表的准确性！！！"
 
 @Composable
 fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
@@ -162,10 +173,16 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
                         },
                     )
                 }
-            } else {
+            } else if (tab == MODE_TODAY) {
                 TodayTimeline(
                     schedule = schedule,
                     week = currentWeek,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                UpdatePage(
+                    updatedAt = schedule.updatedAt,
+                    onImport = onImport,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -191,6 +208,68 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
 }
 
 /**
+ * 「更新课表」页：显示上次更新时间 + 一键更新 + 红字提醒。
+ */
+@Composable
+private fun UpdatePage(updatedAt: Long, onImport: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = Ui.Page),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(28.dp))
+        Text(
+            text = "上次更新",
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onBackgroundVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(text = lastUpdateText(updatedAt), style = MiuixTheme.textStyles.title2)
+        Spacer(Modifier.height(22.dp))
+        TextButton(
+            text = "立即更新课表",
+            onClick = onImport,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "更新时会重新登录学校系统，页面加载完就自动导入，不用手动操作",
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onBackgroundVariant,
+        )
+        Spacer(Modifier.height(26.dp))
+        // 红字提醒
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Ui.CardCorner))
+                .background(Color(0xFFE53935).copy(alpha = 0.14f))
+                .padding(16.dp),
+        ) {
+            Text(
+                text = UPDATE_WARNING,
+                style = MiuixTheme.textStyles.footnote1,
+                color = Color(0xFFE53935),
+            )
+        }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+/** 上次更新时间的口语化描述。 */
+private fun lastUpdateText(updatedAt: Long): String {
+    if (updatedAt <= 0L) return "从未更新"
+    val days = ((System.currentTimeMillis() - updatedAt) / 86_400_000L).toInt()
+    return when {
+        days <= 0 -> "今天"
+        days == 1 -> "昨天"
+        else -> days.toString() + " 天前"
+    }
+}
+
+/**
  * 「周课表 / 今日课程」分段切换。
  *
  * 文案用「周课表」而不是「本周课表」：滑到第 12 周时还写「本周」跟屏幕上显示的周次对不上。
@@ -198,7 +277,7 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
 @Composable
 private fun ModeTabs(tab: Int, onTabChange: (Int) -> Unit) {
     SegmentedTabs(
-        tabs = listOf("周课表", "今日课程"),
+        tabs = listOf("周课表", "今日课程", "更新课表"),
         selectedIndex = tab,
         onSelected = onTabChange,
         modifier = Modifier
@@ -435,7 +514,6 @@ private fun WeekGrid(
     } else {
         MiuixTheme.colorScheme.surfaceContainer
     }
-    val todaySlotColor = lerp(slotColor, MiuixTheme.colorScheme.primary, 0.12f)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -485,7 +563,9 @@ private fun WeekGrid(
                                 .width(dayWidth)
                                 .height(rowHeight - Ui.CellGap)
                                 .clip(RoundedCornerShape(Ui.CellCorner))
-                                .background(if (d == todayIndex) todaySlotColor else slotColor),
+                                // 空格子一律用同一个底色。之前「今天」那一列会加一层淡色高亮，
+                                // 结果空的那几格看着像多出来的课，已去掉（今天的标记改由日期表头承担）。
+                                .background(slotColor),
                         )
                     }
                 }

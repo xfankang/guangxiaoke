@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,11 +91,10 @@ fun AboutScreen() {
             Hairline()
             Spacer(Modifier.height(13.dp))
             Text(
-                text = "广州理工学院的课表 App。登录学校统一身份认证后导入整学期课表，" +
-                    "课表、设置和壁纸都只保存在这台手机上。",
+                text = UPDATE_WARNING,
                 style = MiuixTheme.textStyles.footnote1,
                 lineHeight = 19.sp,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                color = Color(0xFFE53935),
             )
         }
 
