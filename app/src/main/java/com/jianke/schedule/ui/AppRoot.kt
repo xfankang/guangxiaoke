@@ -38,7 +38,6 @@ import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Weeks
@@ -160,12 +159,7 @@ fun AppRoot() {
                             },
                             // 「广小课」下面这行小字
                             subtitle = if (tab == 0) "天天开心" else "",
-                            // 课表页右上角：学校会临时调课，随时可以重新拉一次
-                            actions = {
-                                if (tab == 0 && schedule != null) {
-                                    TextButton(text = "更新", onClick = { importing = true })
-                                }
-                            },
+
                             color = barSurface(),
                         )
                     },
