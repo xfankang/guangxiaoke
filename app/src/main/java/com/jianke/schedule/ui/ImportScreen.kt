@@ -112,6 +112,9 @@ fun ImportScreen(
         ScheduleStore.save(context, schedule)
         importedCourses = courses
         importedCount = courses.size
+        // 把登录后的 cookie 落盘。这样「更新课表」再进来时，只要会话还没过期
+        // 就能直接拉到课表，不用重新输密码和验证码。
+        runCatching { android.webkit.CookieManager.getInstance().flush() }
     }
 
     fun saveAndFinish(courses: List<Course>, bodyText: String, weeks: List<Int>, via: String) {
