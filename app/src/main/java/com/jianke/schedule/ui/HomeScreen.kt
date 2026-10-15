@@ -1012,14 +1012,14 @@ private fun TodayCourseRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(8.dp))
-                // 胶囊用不透明底色，免得压在课程色上时对比度跟着底色一起飘
+                // 胶囊用不透明底色，免得压在课程色上时对比度跟着底色一起飘。
+                // 三个状态统一描一圈边、颜色跟标签文字一致：卡片本身就是一整块课程色，
+                // 不描边的话胶囊和卡片糊在一起，看不出是个独立标签。
                 when (status) {
                     STATUS_DONE -> StatusPill(
                         text = "已完成",
                         container = MiuixTheme.colorScheme.surfaceContainerHighest,
                         content = MiuixTheme.colorScheme.primary,
-                        // 卡片本身就是一整块课程色，胶囊压上去边界看不清，
-                        // 描一圈亮线把它和卡片分开
                         outline = MiuixTheme.colorScheme.primary,
                     )
 
@@ -1027,12 +1027,14 @@ private fun TodayCourseRow(
                         text = "进行中",
                         container = MiuixTheme.colorScheme.primary,
                         content = MiuixTheme.colorScheme.onPrimary,
+                        outline = MiuixTheme.colorScheme.onPrimary,
                     )
 
                     else -> StatusPill(
                         text = "未开始",
                         container = MiuixTheme.colorScheme.surfaceContainerHighest,
                         content = MiuixTheme.colorScheme.onBackgroundVariant,
+                        outline = MiuixTheme.colorScheme.onBackgroundVariant,
                     )
                 }
             }
