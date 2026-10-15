@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
@@ -280,9 +282,12 @@ fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
 /**
  * 分段选择器（周课表/今日课程/更新课表、深色模式三选一）。
  *
- * 自己画而不是用 Miuix 的 TabRow：TabRow 的选中块比容器轨道更高，
- * 会从容器上下沿溢出来（浅色主题下深蓝压在浅灰上特别明显）。
- * 这里把选中块的圆角、内缩都收在自己手里，容器 padding(3dp) 保证永远不溢出。
+ * 样式仍然是 Miuix 的 TabRow（外形、圆角、字色一律不动）。
+ *
+ * 唯一的变化是在外面套了一层容器：TabRow 的选中块比它自己的轨道要高，
+ * 直接从上下沿溢出来（浅色下深蓝压在浅灰上特别明显）。
+ * 把 TabRow 自己的背景设成透明、由外层容器提供底色，并给容器留 3dp 内边距，
+ * 选中块就稳稳待在里面了，外观和原来完全一致。
  */
 @Composable
 fun SegmentedTabs(
@@ -292,48 +297,24 @@ fun SegmentedTabs(
     modifier: Modifier = Modifier,
 ) {
     val capsule = RoundedCornerShape(50)
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(capsule)
-            .background(MiuixTheme.colorScheme.surfaceContainer)
-            // 选中块四周留出 3dp，永远待在容器里面
-            .padding(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            // 底色由外层提供，这样容器比选中块高，不会溢出
+            .background(MiuixTheme.colorScheme.surfaceContainer),
     ) {
-        tabs.forEachIndexed { index, label ->
-            val selected = index == selectedIndex
-            val bg by animateColorAsState(
-                targetValue = if (selected) {
-                    MiuixTheme.colorScheme.primary
-                } else {
-                    Color.Transparent
-                },
-                label = "segmentBg",
-            )
-            val fg by animateColorAsState(
-                targetValue = if (selected) {
-                    MiuixTheme.colorScheme.onPrimary
-                } else {
-                    MiuixTheme.colorScheme.onBackgroundVariant
-                },
-                label = "segmentFg",
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(capsule)
-                    .background(bg)
-                    .clickable(role = Role.Tab) { onSelected(index) }
-                    .padding(vertical = 9.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    style = MiuixTheme.textStyles.body2,
-                    color = fg,
-                )
-            }
-        }
+        TabRow(
+            tabs = tabs,
+            selectedTabIndex = selectedIndex,
+            onTabSelected = onSelected,
+            colors = TabRowDefaults.tabRowColors(
+                backgroundColor = Color.Transparent,
+                contentColor = MiuixTheme.colorScheme.onBackgroundVariant,
+                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
+                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
+            ),
+            modifier = Modifier.padding(3.dp),
+        )
     }
 }

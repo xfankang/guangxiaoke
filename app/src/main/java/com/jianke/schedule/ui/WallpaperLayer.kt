@@ -87,10 +87,4 @@ fun wallpaperPanLimit(
     return maxX to maxY
 }
 
-/** 刚好铺满屏幕所需的缩放倍数（Fit 的 1.0 为基准）。 */
-fun wallpaperFillScale(boxW: Float, boxH: Float, imgW: Float, imgH: Float): Float {
-    if (boxW <= 0f || boxH <= 0f || imgW <= 0f || imgH <= 0f) return 1f
-    val fitK = minOf(boxW / imgW, boxH / imgH)
-    val coverK = maxOf(boxW / imgW, boxH / imgH)
-    return (coverK / fitK).coerceAtLeast(1f)
-}
+

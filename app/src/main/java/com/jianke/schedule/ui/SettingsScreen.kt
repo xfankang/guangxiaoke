@@ -54,6 +54,10 @@ fun SettingsScreen(
     var editScale by remember { mutableStateOf(1f) }
     var editFracX by remember { mutableStateOf(0f) }
     var editFracY by remember { mutableStateOf(0f) }
+    // 换图前那一张的构图。点「取消」要连图带构图一起还原回去。
+    var prevScale by remember { mutableStateOf(1f) }
+    var prevFracX by remember { mutableStateOf(0f) }
+    var prevFracY by remember { mutableStateOf(0f) }
 
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -62,6 +66,12 @@ fun SettingsScreen(
             hint = "没有选择图片"
             return@rememberLauncherForActivityResult
         }
+        // 先记住换图前的构图，取消时要还原
+        val t = Prefs.wallpaperOffset(context)
+        prevScale = Prefs.wallpaperScale(context)
+        prevFracX = t.first
+        prevFracY = t.second
+        // save() 内部会先给旧图留一份底
         val ok = Wallpaper.save(context, uri)
         if (ok) {
             onWallpaperChanged()
@@ -192,8 +202,16 @@ fun SettingsScreen(
             initialScale = editScale,
             initialFracX = editFracX,
             initialFracY = editFracY,
-            onCancel = { editing = null },
+            onCancel = {
+                // 取消 = 连图带构图一起回到换图之前
+                Wallpaper.restoreBackup(context)
+                onWallpaperTransform(prevScale, prevFracX, prevFracY)
+                onWallpaperChanged()
+                hint = "已还原到修改前的背景"
+                editing = null
+            },
             onConfirm = { s, fx, fy ->
+                Wallpaper.discardBackup(context)
                 onWallpaperTransform(s, fx, fy)
                 hint = "背景构图已保存"
                 editing = null

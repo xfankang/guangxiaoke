@@ -72,11 +72,10 @@ fun WallpaperEditorDialog(
     var fracY by remember { mutableFloatStateOf(initialFracY) }
     var box by remember { mutableStateOf(IntSize.Zero) }
 
-    // 「铺满需要多少倍」和「能挪多远」都只跟宽高比有关，与用 dp 还是 px 无关。
-    // 所以直接用屏幕尺寸算 —— 预览框的布局尺寸第一帧还是 0，拿它算会得出错误结论。
+    // 「能挪多远」只跟宽高比有关，与用 dp 还是 px 无关。
+    // 用屏幕尺寸算 —— 预览框的布局尺寸第一帧还是 0，拿它算会得出错误结论。
     val screenW = config.screenWidthDp.toFloat()
     val screenH = config.screenHeightDp.toFloat()
-    val fillScale = wallpaperFillScale(screenW, screenH, imgW, imgH)
 
     Dialog(onDismissRequest = onCancel) {
         Card(
@@ -90,7 +89,7 @@ fun WallpaperEditorDialog(
                 Text(text = "调整背景", style = MiuixTheme.textStyles.title3)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "默认完整显示整张图；双指放大可以铺满屏幕，拖动可以挪位置",
+                    text = "双指捏合放大缩小，拖动可以挪位置",
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onBackgroundVariant,
                 )
@@ -130,55 +129,21 @@ fun WallpaperEditorDialog(
                     )
                 }
 
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = wallpaperSizeHint(scale, fillScale),
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onBackgroundVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(16.dp))
 
+                // 左右两个等宽按钮，和页面里其他按钮一样是左右撑满、居中文字
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        text = "完整显示",
-                        onClick = {
-                            scale = 1f
-                            fracX = 0f
-                            fracY = 0f
-                        },
-                        modifier = Modifier.width(94.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(
-                        text = "铺满屏幕",
-                        onClick = {
-                            scale = fillScale.coerceIn(MIN_SCALE, MAX_SCALE)
-                            fracX = 0f
-                            fracY = 0f
-                        },
-                        modifier = Modifier.width(94.dp),
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(
                         text = "取消",
                         onClick = onCancel,
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
                     TextButton(
-                        text = "确定",
+                        text = "确认",
                         onClick = {
                             // 保存前按最终缩放再夹一次，避免露出背景
                             val (lx, ly) = wallpaperPanLimit(screenW, screenH, imgW, imgH, scale)
@@ -188,7 +153,7 @@ fun WallpaperEditorDialog(
                                 fracY.coerceIn(-ly, ly),
                             )
                         },
-                        modifier = Modifier.width(140.dp),
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -196,12 +161,4 @@ fun WallpaperEditorDialog(
     }
 }
 
-/** 一句话说清当前是「完整显示」还是「已铺满」。 */
-private fun wallpaperSizeHint(scale: Float, fillScale: Float): String {
-    if (scale < fillScale - 0.01f) {
-        val target = String.format("%.1f", fillScale)
-        return "当前：完整显示，四周留模糊底。放大到 " + target + "× 可铺满"
-    }
-    val now = String.format("%.1f", scale)
-    return "当前：已铺满屏幕 " + now + "×"
-}
+
