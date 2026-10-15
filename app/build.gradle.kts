@@ -25,8 +25,8 @@ android {
         applicationId = "com.jianke.schedule"
         minSdk = 30
         targetSdk = 37
-        versionCode = 13
-        versionName = "3.5.4"
+        versionCode = 14
+        versionName = "3.5.5"
     }
 
     signingConfigs {

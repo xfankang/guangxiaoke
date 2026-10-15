@@ -939,6 +939,8 @@ private fun TodayTimeline(schedule: Schedule, week: Int, modifier: Modifier = Mo
                         fontSize = 15.sp,
                         horizontalPadding = 18.dp,
                         verticalPadding = 8.dp,
+                        // 描一圈亮线，跟下面那些整块的课程色拉开层次
+                        outline = MiuixTheme.colorScheme.primary,
                     )
                 }
             }
@@ -1016,6 +1018,9 @@ private fun TodayCourseRow(
                         text = "已完成",
                         container = MiuixTheme.colorScheme.surfaceContainerHighest,
                         content = MiuixTheme.colorScheme.primary,
+                        // 卡片本身就是一整块课程色，胶囊压上去边界看不清，
+                        // 描一圈亮线把它和卡片分开
+                        outline = MiuixTheme.colorScheme.primary,
                     )
 
                     STATUS_ONGOING -> StatusPill(

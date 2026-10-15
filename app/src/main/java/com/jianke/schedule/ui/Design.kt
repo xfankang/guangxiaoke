@@ -2,6 +2,7 @@ package com.jianke.schedule.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
@@ -130,7 +132,12 @@ fun Hairline(modifier: Modifier = Modifier) {
     )
 }
 
-/** 小胶囊标签：用来表示状态（本周 / 已完成 / 进行中…）。 */
+/**
+ * 小胶囊标签：用来表示状态（本周 / 已完成 / 进行中…）。
+ *
+ * [outline] 是描边色。课程卡片本身也是整块课程色，胶囊直接压上去会糊在一起分不清，
+ * 「已完成」这类状态胶囊描一圈亮线才看得出是独立的一个标签。
+ */
 @Composable
 fun StatusPill(
     text: String,
@@ -140,12 +147,21 @@ fun StatusPill(
     fontSize: TextUnit = 10.sp,
     horizontalPadding: Dp = 9.dp,
     verticalPadding: Dp = 3.dp,
+    outline: Color? = null,
+    outlineWidth: Dp = 1.dp,
     onClick: (() -> Unit)? = null,
 ) {
     Box(
         modifier = modifier
             .clip(CircleShape)
             .background(container)
+            .then(
+                if (outline != null) {
+                    Modifier.border(outlineWidth, outline, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
             .then(
                 if (onClick != null) {
                     Modifier.clickable(role = Role.Button, onClick = onClick)
@@ -309,11 +325,19 @@ fun SegmentedTabs(
                 if (index != 0 || offset != 0) rowState.scrollToItem(0, 0)
             }
     }
+    // 模块宽度按屏宽算，保证「三个模块 + 间距 + 左右留白」一定放得下。
+    // 之前宽度是组件自己算的：总宽刚好等于屏宽、零余量，任何一点取整误差都会让
+    // 最右/最左那个模块冒出视口、边框被裁。自己算就永远留得住余量，两边都能露全。
+    val screenW = LocalConfiguration.current.screenWidthDp.dp
+    val itemWidth = (screenW - SEGMENT_EDGE * 2 - SEGMENT_GAP * 2) / 3
     TabRow(
         tabs = tabs,
         selectedTabIndex = selectedIndex,
         onTabSelected = onSelected,
         listState = rowState,
+        minWidth = itemWidth,
+        maxWidth = itemWidth,
+        itemSpacing = SEGMENT_GAP,
         colors = TabRowDefaults.tabRowColors(
             // 不画底色容器：加了它会在三个模块四周留出一圈浅色边，
             // 看起来就像色块溢出。选中块自己实心、未选中项自己带描边，不需要底。
@@ -322,12 +346,12 @@ fun SegmentedTabs(
             selectedBackgroundColor = MiuixTheme.colorScheme.primary,
             selectedContentColor = MiuixTheme.colorScheme.onPrimary,
         ),
-        // 屏窄（或系统字号调大）时必须允许模块收缩，否则三个模块放不下、末位会被视口裁掉。
-        // 宽度上限交给 Miuix 自己算，铺满整行。
-        minWidth = SEGMENT_MIN_WIDTH,
         modifier = modifier,
     )
 }
 
-/** 模块能缩到的最小宽度：只保证「周课表」三个字不被挤断，屏窄时整体等比收缩。 */
-private val SEGMENT_MIN_WIDTH = 56.dp
+/** 模块左右两侧留白。 */
+private val SEGMENT_EDGE = 14.dp
+
+/** 模块之间的间距。 */
+private val SEGMENT_GAP = 8.dp
