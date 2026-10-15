@@ -282,12 +282,11 @@ fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
 /**
  * 分段选择器（周课表/今日课程/更新课表、深色模式三选一）。
  *
- * 样式仍然是 Miuix 的 TabRow（外形、圆角、字色一律不动）。
+ * 用 Miuix 的 TabRow，但**不画它自带的底色容器**，只留三个模块本身：
+ * 选中项实心、未选中项带描边。
  *
- * 唯一的变化是在外面套了一层容器：TabRow 的选中块比它自己的轨道要高，
- * 直接从上下沿溢出来（浅色下深蓝压在浅灰上特别明显）。
- * 把 TabRow 自己的背景设成透明、由外层容器提供底色，并给容器留 3dp 内边距，
- * 选中块就稳稳待在里面了，外观和原来完全一致。
+ * 之前试过在 TabRow 外面套一层容器来「包住」选中块，结果三个模块四周多出一圈
+ * 浅色边，看着反而更像色块溢出 —— 去掉底之后干净了。
  */
 @Composable
 fun SegmentedTabs(
@@ -296,28 +295,18 @@ fun SegmentedTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            // 只画底色、**不做 clip**：clip 会把选中块的圆角一起切平（左端尤其明显）。
-            // 圆角半径直接用 Miuix 自己的值，外形和原版一致。
-            .background(
-                color = MiuixTheme.colorScheme.surfaceContainer,
-                shape = RoundedCornerShape(TabRowDefaults.TabRowCornerRadius),
-            ),
-    ) {
-        TabRow(
-            tabs = tabs,
-            selectedTabIndex = selectedIndex,
-            onTabSelected = onSelected,
-            colors = TabRowDefaults.tabRowColors(
-                backgroundColor = Color.Transparent,
-                contentColor = MiuixTheme.colorScheme.onBackgroundVariant,
-                selectedBackgroundColor = MiuixTheme.colorScheme.primary,
-                selectedContentColor = MiuixTheme.colorScheme.onPrimary,
-            ),
-            // 选中块比轨道上下各高出约 2dp，这里给 4dp 余量把它包进来
-            modifier = Modifier.padding(4.dp),
-        )
-    }
+    TabRow(
+        tabs = tabs,
+        selectedTabIndex = selectedIndex,
+        onTabSelected = onSelected,
+        colors = TabRowDefaults.tabRowColors(
+            // 不画底色容器：加了它会在三个模块四周留出一圈浅色边，
+            // 看起来就像色块溢出。选中块自己实心、未选中项自己带描边，不需要底。
+            backgroundColor = Color.Transparent,
+            contentColor = MiuixTheme.colorScheme.onBackgroundVariant,
+            selectedBackgroundColor = MiuixTheme.colorScheme.primary,
+            selectedContentColor = MiuixTheme.colorScheme.onPrimary,
+        ),
+        modifier = modifier,
+    )
 }
