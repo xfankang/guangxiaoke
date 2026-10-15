@@ -15,7 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -295,10 +298,22 @@ fun SegmentedTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Miuix 的 TabRow 内部是 LazyRow。三个模块的总宽刚好等于屏宽、一点余量都没有，
+    // 而选中项比未选中项宽 1~2px —— 于是它每次都会滚动去「跟随」选中项，
+    // 整行跟着左右位移，最左/最右那个模块的边框就被视口裁掉。
+    // 这里把滚动位置钉死在起点，行不再动，样式一行没改。
+    val rowState = rememberLazyListState()
+    LaunchedEffect(rowState) {
+        snapshotFlow { rowState.firstVisibleItemIndex to rowState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                if (index != 0 || offset != 0) rowState.scrollToItem(0, 0)
+            }
+    }
     TabRow(
         tabs = tabs,
         selectedTabIndex = selectedIndex,
         onTabSelected = onSelected,
+        listState = rowState,
         colors = TabRowDefaults.tabRowColors(
             // 不画底色容器：加了它会在三个模块四周留出一圈浅色边，
             // 看起来就像色块溢出。选中块自己实心、未选中项自己带描边，不需要底。
@@ -307,6 +322,12 @@ fun SegmentedTabs(
             selectedBackgroundColor = MiuixTheme.colorScheme.primary,
             selectedContentColor = MiuixTheme.colorScheme.onPrimary,
         ),
+        // 屏窄（或系统字号调大）时必须允许模块收缩，否则三个模块放不下、末位会被视口裁掉。
+        // 宽度上限交给 Miuix 自己算，铺满整行。
+        minWidth = SEGMENT_MIN_WIDTH,
         modifier = modifier,
     )
 }
+
+/** 模块能缩到的最小宽度：只保证「周课表」三个字不被挤断，屏窄时整体等比收缩。 */
+private val SEGMENT_MIN_WIDTH = 56.dp
