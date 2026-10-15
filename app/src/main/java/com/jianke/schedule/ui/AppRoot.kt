@@ -67,14 +67,6 @@ fun AppRoot() {
         mutableStateOf(runCatching { ScheduleStore.load(context) }.getOrNull())
     }
     var importing by remember { mutableStateOf(false) }
-    // 打开 App 时静默检查一次调课：距上次更新超过 6 小时才查，避免每次启动都跑
-    var silentCheck by remember {
-        mutableStateOf(
-            schedule != null &&
-                System.currentTimeMillis() - (schedule?.updatedAt ?: 0L) > 6 * 3600_000L,
-        )
-    }
-    var pendingDiff by remember { mutableStateOf<com.jianke.schedule.data.ScheduleDiff?>(null) }
     // 首次打开时弹一次说明，看过就记下来，之后不再打扰
     var showPrivacy by remember { mutableStateOf(!Prefs.privacyShown(context)) }
     // 壁纸的缩放/位移：用户自己调好的构图
@@ -91,21 +83,6 @@ fun AppRoot() {
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var wallpaper by remember { mutableStateOf(runCatching { Wallpaper.load(context) }.getOrNull()) }
 
-    if (silentCheck) {
-        AppTheme(darkOverride = darkOverride) {
-            ImportScreen(
-                silent = true,
-                onCancel = { silentCheck = false },
-                onImported = { silentCheck = false },
-                onSilentDone = { diff ->
-                    silentCheck = false
-                    schedule = runCatching { ScheduleStore.load(context) }.getOrNull()
-                    if (diff != null && !diff.isEmpty) pendingDiff = diff
-                },
-            )
-        }
-        return
-    }
 
     if (importing) {
         AppTheme(darkOverride = darkOverride) {
@@ -265,11 +242,6 @@ fun AppRoot() {
                 }
             }
 
-            // 静默检查发现调课时弹出来
-            val diff = pendingDiff
-            if (diff != null) {
-                ScheduleDiffDialog(diff = diff, onDismiss = { pendingDiff = null })
-            }
 
             // 首次打开时的说明弹窗（只弹一次）
             if (showPrivacy) {
