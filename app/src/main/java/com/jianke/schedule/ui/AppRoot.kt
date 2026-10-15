@@ -83,6 +83,7 @@ fun AppRoot() {
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var wallpaper by remember { mutableStateOf(runCatching { Wallpaper.load(context) }.getOrNull()) }
 
+
     if (importing) {
         AppTheme(darkOverride = darkOverride) {
             ImportScreen(
@@ -101,20 +102,12 @@ fun AppRoot() {
         Box(modifier = Modifier.fillMaxSize()) {
             // 自定义壁纸铺在最底层
             wallpaper?.let { bitmap ->
-                // 先按 Crop 铺满，再叠加用户自己调好的缩放与位移
-                Image(
+                // 和编辑器预览用的是同一个渲染函数，保证所见即所得
+                WallpaperLayer(
                     bitmap = bitmap,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = wpScale
-                            scaleY = wpScale
-                            // 位移存的是屏幕比例，这里换算成像素
-                            translationX = wpOffsetX * size.width
-                            translationY = wpOffsetY * size.height
-                        },
-                    contentScale = ContentScale.Crop,
+                    scale = wpScale,
+                    fracX = wpOffsetX,
+                    fracY = wpOffsetY,
                 )
                 // 压一层半透明底色，保证壁纸再花也不影响文字可读性
                 Box(
@@ -135,6 +128,7 @@ fun AppRoot() {
                             },
                             // 「广小课」下面这行小字
                             subtitle = if (tab == 0) "天天开心" else "",
+
                             color = barSurface(),
                         )
                     },
@@ -239,6 +233,7 @@ fun AppRoot() {
                     }
                 }
             }
+
 
             // 首次打开时的说明弹窗（只弹一次）
             if (showPrivacy) {

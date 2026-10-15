@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,13 +35,18 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/** 作者单独一块，和鸣谢名单分开。 */
+private val AUTHORS = listOf(
+    "xfankang" to "作者",
+    "Rikuyal" to "作者",
+)
+
 private val CREDITS = listOf(
     "DeepSeek Harness" to "开发与调试环境",
     "YuKongA" to "Miuix 界面组件库",
-    "薪音" to "测试",
-    "curian" to "测试",
-    "xxl" to "测试",
-    "xfankang" to "作者",
+    "薪音" to "测试人员",
+    "curian" to "测试人员",
+    "xxl" to "测试人员",
 )
 
 @Composable
@@ -90,12 +96,25 @@ fun AboutScreen() {
             Hairline()
             Spacer(Modifier.height(13.dp))
             Text(
-                text = "广州理工学院的课表 App。登录学校统一身份认证后导入整学期课表，" +
-                    "课表、设置和壁纸都只保存在这台手机上。",
+                text = UPDATE_WARNING,
                 style = MiuixTheme.textStyles.footnote1,
                 lineHeight = 19.sp,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                color = Color(0xFFE53935),
             )
+        }
+
+        SectionTitle("作者")
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Ui.Page),
+            cornerRadius = Ui.CardCorner,
+            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+        ) {
+            AUTHORS.forEachIndexed { index, (name, role) ->
+                if (index > 0) Hairline()
+                CreditRow(name = name, role = role)
+            }
         }
 
         SectionTitle("鸣谢")

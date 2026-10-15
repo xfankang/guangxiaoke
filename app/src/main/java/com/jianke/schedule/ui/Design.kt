@@ -1,18 +1,25 @@
 package com.jianke.schedule.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,12 +29,13 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.TabRow
-import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
@@ -90,7 +98,9 @@ fun courseAccent(raw: Int): Color =
 @Composable
 fun courseTint(raw: Int, strength: Float = 1f): Color {
     val base = MiuixTheme.colorScheme.surfaceContainerHigh
-    val ratio = (if (base.luminance() < 0.5f) 0.40f else 0.34f) * strength
+    // 实测反馈「整块偏暗」，把浓度提了一档：深色 0.40→0.54、浅色 0.34→0.46。
+    // 配色仍走 courseInk 的明暗二分，字色对比度不受影响。
+    val ratio = (if (base.luminance() < 0.5f) 0.54f else 0.46f) * strength
     return lerp(base, courseAccent(raw), ratio)
 }
 
@@ -122,13 +132,23 @@ fun Hairline(modifier: Modifier = Modifier) {
     )
 }
 
-/** 小胶囊标签：用来表示状态（本周 / 已完成 / 进行中…）。 */
+/**
+ * 小胶囊标签：用来表示状态（本周 / 已完成 / 进行中…）。
+ *
+ * [outline] 是描边色。课程卡片本身也是整块课程色，胶囊直接压上去会糊在一起分不清，
+ * 「已完成」这类状态胶囊描一圈亮线才看得出是独立的一个标签。
+ */
 @Composable
 fun StatusPill(
     text: String,
     container: Color,
     content: Color,
     modifier: Modifier = Modifier,
+    fontSize: TextUnit = 10.sp,
+    horizontalPadding: Dp = 9.dp,
+    verticalPadding: Dp = 3.dp,
+    outline: Color? = null,
+    outlineWidth: Dp = 1.dp,
     onClick: (() -> Unit)? = null,
 ) {
     Box(
@@ -136,15 +156,22 @@ fun StatusPill(
             .clip(CircleShape)
             .background(container)
             .then(
+                if (outline != null) {
+                    Modifier.border(outlineWidth, outline, CircleShape)
+                } else {
+                    Modifier
+                },
+            )
+            .then(
                 if (onClick != null) {
                     Modifier.clickable(role = Role.Button, onClick = onClick)
                 } else {
                     Modifier
                 },
             )
-            .padding(horizontal = 9.dp, vertical = 3.dp),
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
     ) {
-        Text(text = text, fontSize = 10.sp, lineHeight = 13.sp, color = content)
+        Text(text = text, fontSize = fontSize, lineHeight = fontSize * 1.35f, color = content)
     }
 }
 
@@ -272,10 +299,11 @@ fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * 分段选择器（周课表/今日课程、深色模式三选一）。
+ * 分段选择器（周课表/今日课程/更新课表、深色模式三选一）。
  *
- * 用 Miuix 的 TabRow，配色固定成「未选中是容器底 + 次要色文字，选中是主题色实心 + 反色文字」，
- * 避免同一套控件在不同页面出现两套高亮规则。
+ * 固定等宽选项，宽度由父容器分配；首页与设置卡片可用宽度不同，不能按屏宽计算。
+ * 不使用滚动容器，避免拖动、选中项自动居中与强制归零互相干扰。
+ * 选中项实心、未选中项描边；大字体允许换行，并让整行保持相同高度。
  */
 @Composable
 fun SegmentedTabs(
@@ -284,16 +312,51 @@ fun SegmentedTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    TabRow(
-        tabs = tabs,
-        selectedTabIndex = selectedIndex,
-        onTabSelected = onSelected,
-        colors = TabRowDefaults.tabRowColors(
-            backgroundColor = MiuixTheme.colorScheme.surfaceContainer,
-            contentColor = MiuixTheme.colorScheme.onBackgroundVariant,
-            selectedBackgroundColor = MiuixTheme.colorScheme.primary,
-            selectedContentColor = MiuixTheme.colorScheme.onPrimary,
-        ),
-        modifier = modifier,
-    )
+    val colors = MiuixTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
+    ) {
+        tabs.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .heightIn(min = 44.dp)
+                    .clip(shape)
+                    .background(if (selected) colors.primary else Color.Transparent)
+                    .then(
+                        if (selected) Modifier else Modifier.border(
+                            width = 1.dp,
+                            color = colors.onBackgroundVariant.copy(alpha = 0.5f),
+                            shape = shape,
+                        ),
+                    )
+                    .selectable(
+                        selected = selected,
+                        role = Role.Tab,
+                        onClick = { onSelected(index) },
+                    )
+                    .padding(horizontal = 6.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 16.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    color = if (selected) colors.onPrimary else colors.onBackgroundVariant,
+                )
+            }
+        }
+    }
 }
+
+/** 模块之间的间距。 */
+private val SEGMENT_GAP = 8.dp

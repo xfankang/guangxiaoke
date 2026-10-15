@@ -10,6 +10,8 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +83,12 @@ private class ScanState {
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
+/**
+ * 导入 / 更新课表。
+ *
+ * 特意不做「打开 App 时后台自动检查」：教务会话不能跨进程存活，冷启动时检查必然失败，
+ * 却要用户每次先等一遍。更新入口只保留「更新课表」模块和超期提醒。
+ */
 fun ImportScreen(
     onCancel: () -> Unit,
     onImported: (Int) -> Unit,
@@ -112,6 +121,9 @@ fun ImportScreen(
         ScheduleStore.save(context, schedule)
         importedCourses = courses
         importedCount = courses.size
+        // 把登录后的 cookie 落盘。这样「更新课表」再进来时，只要会话还没过期
+        // 就能直接拉到课表，不用重新输密码和验证码。
+        runCatching { android.webkit.CookieManager.getInstance().flush() }
     }
 
     fun saveAndFinish(courses: List<Course>, bodyText: String, weeks: List<Int>, via: String) {
@@ -326,6 +338,7 @@ fun ImportScreen(
         }
         if (!ok) finishWithWeekMap() else inject(ScheduleJs.scrapeScript, 1400L)
     }
+
 
     val handleMessage: (String, String) -> Unit = { kind, payload ->
         when (kind) {
