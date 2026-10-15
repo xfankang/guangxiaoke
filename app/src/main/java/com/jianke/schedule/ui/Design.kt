@@ -296,13 +296,15 @@ fun SegmentedTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val capsule = RoundedCornerShape(50)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(capsule)
-            // 底色由外层提供，这样容器比选中块高，不会溢出
-            .background(MiuixTheme.colorScheme.surfaceContainer),
+            // 只画底色、**不做 clip**：clip 会把选中块的圆角一起切平（左端尤其明显）。
+            // 圆角半径直接用 Miuix 自己的值，外形和原版一致。
+            .background(
+                color = MiuixTheme.colorScheme.surfaceContainer,
+                shape = RoundedCornerShape(TabRowDefaults.TabRowCornerRadius),
+            ),
     ) {
         TabRow(
             tabs = tabs,
@@ -314,7 +316,8 @@ fun SegmentedTabs(
                 selectedBackgroundColor = MiuixTheme.colorScheme.primary,
                 selectedContentColor = MiuixTheme.colorScheme.onPrimary,
             ),
-            modifier = Modifier.padding(3.dp),
+            // 选中块比轨道上下各高出约 2dp，这里给 4dp 余量把它包进来
+            modifier = Modifier.padding(4.dp),
         )
     }
 }
