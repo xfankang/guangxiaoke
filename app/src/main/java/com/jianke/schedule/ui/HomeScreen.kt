@@ -53,6 +53,8 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.Schedule
+import com.jianke.schedule.data.layoutDay
+import com.jianke.schedule.data.rowIndexOf
 import com.jianke.schedule.data.schoolBigPeriods
 import com.jianke.schedule.data.schoolLessonTimes
 import kotlinx.coroutines.launch
@@ -501,6 +503,72 @@ private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
 private fun rowIndexOf(period: Int): Int =
     schoolBigPeriods.firstOrNull { period in it.startPeriod..it.endPeriod }?.row ?: 0
 
+/** 一门课在格子里的横向位置：重叠的课并排，不重叠的占满整列。 */
+private data class PlacedCourse(
+    val course: Course,
+    val startRow: Int,
+    val endRow: Int,
+    val lane: Int,
+    val lanes: Int,
+)
+
+/**
+ * 计算某一天所有课程的摆放位置。
+ *
+ * 正常情况下一天里不会有时间重叠的课，此时每门课都独占整列（lanes = 1），
+ * 渲染结果和以前完全一样。但选课冲突、重修撞课这类情况是真实存在的，
+ * 一旦重叠就必须并排显示，否则两门课的格子会叠在一起、文字糊成一团。
+ */
+private fun layoutDay(dayCourses: List<Course>): List<PlacedCourse> {
+    if (dayCourses.isEmpty()) return emptyList()
+    val sorted = dayCourses.sortedWith(
+        compareBy({ rowIndexOf(it.startPeriod) }, { rowIndexOf(it.endPeriod) }),
+    )
+    val out = ArrayList<PlacedCourse>()
+    var i = 0
+    while (i < sorted.size) {
+        // 扫出一组互相重叠的课（按开始行推进，直到不再和当前组相交）
+        val cluster = ArrayList<Course>()
+        cluster.add(sorted[i])
+        var maxEnd = rowIndexOf(sorted[i].endPeriod)
+        var j = i + 1
+        while (j < sorted.size && rowIndexOf(sorted[j].startPeriod) <= maxEnd) {
+            cluster.add(sorted[j])
+            maxEnd = maxOf(maxEnd, rowIndexOf(sorted[j].endPeriod))
+            j++
+        }
+        // 组内按「最早空出来的车道」分配，尽量少占列
+        val laneEnds = ArrayList<Int>()
+        val laneOf = HashMap<Course, Int>()
+        for (c in cluster) {
+            val s = rowIndexOf(c.startPeriod)
+            val e = rowIndexOf(c.endPeriod)
+            val free = laneEnds.indexOfFirst { it < s }
+            if (free >= 0) {
+                laneEnds[free] = e
+                laneOf[c] = free
+            } else {
+                laneEnds.add(e)
+                laneOf[c] = laneEnds.size - 1
+            }
+        }
+        val lanes = laneEnds.size
+        for (c in cluster) {
+            out.add(
+                PlacedCourse(
+                    course = c,
+                    startRow = rowIndexOf(c.startPeriod),
+                    endRow = rowIndexOf(c.endPeriod),
+                    lane = laneOf[c] ?: 0,
+                    lanes = lanes,
+                ),
+            )
+        }
+        i = j
+    }
+    return out
+}
+
 @Composable
 private fun WeekGrid(
     courses: List<Course>,
@@ -570,30 +638,34 @@ private fun WeekGrid(
                     }
                 }
             }
-            courses.forEach { course ->
-                val startRow = rowIndexOf(course.startPeriod)
-                val endRow = rowIndexOf(course.endPeriod)
-                val x = Ui.PeriodGutter + step * (course.dayOfWeek - 1)
-                val y = rowHeight * startRow
-                // 格子外框按「列宽 + 净间距」算，格子自己再各缩进半个间距，
-                // 这样上下相邻的两门课之间也会留出缝，不会糊成一片。
-                val w = dayWidth + Ui.CellGap
-                val h = rowHeight * (endRow - startRow + 1)
-                Box(
-                    modifier = Modifier
-                        .offset(x = x, y = y)
-                        .width(w)
-                        .height(h)
-                        .onGloballyPositioned { coords ->
-                            rects[course] = coords.boundsInRoot()
-                        }
-                        .pointerInput(course) {
-                            detectTapGestures {
-                                rects[course]?.let { r -> onCourseClick(course, r) }
+            // 按天分组摆放：同一天里时间重叠的课并排，不重叠的照旧占满整列
+            (1..7).forEach { day ->
+                val placed = layoutDay(courses.filter { it.dayOfWeek == day })
+                placed.forEach { p ->
+                    val course = p.course
+                    // 格子外框按「列宽 + 净间距」算，格子自己再各缩进半个间距，
+                    // 这样上下相邻的两门课之间也会留出缝，不会糊成一片。
+                    val fullW = dayWidth + Ui.CellGap
+                    val laneW = fullW / p.lanes
+                    val x = Ui.PeriodGutter + step * (day - 1) + laneW * p.lane
+                    val y = rowHeight * p.startRow
+                    val h = rowHeight * (p.endRow - p.startRow + 1)
+                    Box(
+                        modifier = Modifier
+                            .offset(x = x, y = y)
+                            .width(laneW)
+                            .height(h)
+                            .onGloballyPositioned { coords ->
+                                rects[course] = coords.boundsInRoot()
                             }
-                        },
-                ) {
-                    CourseCell(course)
+                            .pointerInput(course) {
+                                detectTapGestures {
+                                    rects[course]?.let { r -> onCourseClick(course, r) }
+                                }
+                            },
+                    ) {
+                        CourseCell(course)
+                    }
                 }
             }
         }
