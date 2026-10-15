@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -25,26 +25,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.foundation.Image
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private const val MIN_SCALE = 1f
-private const val MAX_SCALE = 5f
+private const val MAX_SCALE = 6f
 
 /**
- * 壁纸调整：拖动挪位置、双指捏合改大小。
+ * 壁纸调整。
  *
- * 位移存的是**屏幕宽高的比例**（不是像素），这样预览框和全屏渲染能对上，换手机也不会错位。
+ * 基准是「完整显示整张图」（Fit 的 1.0）：不论横图竖图，打开就能看到全貌，
+ * 不会有「选了一张横图结果被放大 2 倍只剩中间一条」的情况。
+ * 想铺满屏幕就点「铺满屏幕」或者自己放大。
+ *
+ * 预览框和主界面调用的是同一个 [WallpaperLayer]，所以预览就是最终效果。
  */
 @Composable
 fun WallpaperEditorDialog(
@@ -61,10 +64,19 @@ fun WallpaperEditorDialog(
     } else {
         0.5f
     }
+    val imgW = bitmap.width.toFloat()
+    val imgH = bitmap.height.toFloat()
+
     var scale by remember { mutableFloatStateOf(initialScale.coerceIn(MIN_SCALE, MAX_SCALE)) }
-    val startLim = (scale - 1f) / 2f
-    var fracX by remember { mutableFloatStateOf(initialFracX.coerceIn(-startLim, startLim)) }
-    var fracY by remember { mutableFloatStateOf(initialFracY.coerceIn(-startLim, startLim)) }
+    var fracX by remember { mutableFloatStateOf(initialFracX) }
+    var fracY by remember { mutableFloatStateOf(initialFracY) }
+    var box by remember { mutableStateOf(IntSize.Zero) }
+
+    // 「铺满需要多少倍」和「能挪多远」都只跟宽高比有关，与用 dp 还是 px 无关。
+    // 所以直接用屏幕尺寸算 —— 预览框的布局尺寸第一帧还是 0，拿它算会得出错误结论。
+    val screenW = config.screenWidthDp.toFloat()
+    val screenH = config.screenHeightDp.toFloat()
+    val fillScale = wallpaperFillScale(screenW, screenH, imgW, imgH)
 
     Dialog(onDismissRequest = onCancel) {
         Card(
@@ -75,91 +87,121 @@ fun WallpaperEditorDialog(
             insideMargin = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "调整背景",
-                    style = MiuixTheme.textStyles.title3,
-                )
+                Text(text = "调整背景", style = MiuixTheme.textStyles.title3)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "拖动可以挪位置，双指捏合可以放大缩小",
+                    text = "默认完整显示整张图；双指放大可以铺满屏幕，拖动可以挪位置",
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onBackgroundVariant,
                 )
                 Spacer(Modifier.height(14.dp))
 
-                // 预览框：比例和手机屏幕一致，所见即所得
+                // 预览框：比例和手机屏幕一致，用的就是主界面那套渲染
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(aspect)
                         .clip(RoundedCornerShape(14.dp))
                         .background(Color.Black)
+                        .onGloballyPositioned { box = it.size }
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                                // ContentScale.Crop 是把源图裁好铺满的，内容不会溢出画面；
-                                // 所以能挪动的范围只来自「放大出来的那一圈」：
-                                // 放大到 s 倍时，左右各多出 (s-1)/2 个画面宽（高）度。
-                                val lim = (scale - 1f) / 2f
-                                fracX = (fracX + pan.x / size.width).coerceIn(-lim, lim)
-                                fracY = (fracY + pan.y / size.height).coerceIn(-lim, lim)
+                                val next = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
+                                // 能挪多少，取决于「当前缩放下图比屏幕大出来多少」。
+                                // 图比屏幕小的方向一格都不许挪，否则会露出背景。
+                                val (lx, ly) = wallpaperPanLimit(
+                                    size.width.toFloat(),
+                                    size.height.toFloat(),
+                                    imgW,
+                                    imgH,
+                                    next,
+                                )
+                                scale = next
+                                fracX = (fracX + pan.x / size.width).coerceIn(-lx, lx)
+                                fracY = (fracY + pan.y / size.height).coerceIn(-ly, ly)
                             }
                         },
                 ) {
-                    Image(
+                    WallpaperLayer(
                         bitmap = bitmap,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                                translationX = fracX * size.width
-                                translationY = fracY * size.height
-                            },
-                        contentScale = ContentScale.Crop,
+                        scale = scale,
+                        fracX = fracX,
+                        fracY = fracY,
                     )
                 }
+
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "缩放 " + String.format("%.1f", scale) + "×",
+                    text = wallpaperSizeHint(scale, fillScale),
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onBackgroundVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(14.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(
-                        text = "重置",
+                        text = "完整显示",
                         onClick = {
                             scale = 1f
                             fracX = 0f
                             fracY = 0f
                         },
-                        modifier = Modifier.width(92.dp),
+                        modifier = Modifier.width(94.dp),
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        text = "铺满屏幕",
+                        onClick = {
+                            scale = fillScale.coerceIn(MIN_SCALE, MAX_SCALE)
+                            fracX = 0f
+                            fracY = 0f
+                        },
+                        modifier = Modifier.width(94.dp),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     TextButton(
                         text = "取消",
                         onClick = onCancel,
-                        modifier = Modifier.width(92.dp),
+                        modifier = Modifier.width(140.dp),
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(8.dp))
                     TextButton(
                         text = "确定",
                         onClick = {
-                            val lim = (scale - 1f) / 2f
-                            onConfirm(scale, fracX.coerceIn(-lim, lim), fracY.coerceIn(-lim, lim))
+                            // 保存前按最终缩放再夹一次，避免露出背景
+                            val (lx, ly) = wallpaperPanLimit(screenW, screenH, imgW, imgH, scale)
+                            onConfirm(
+                                scale,
+                                fracX.coerceIn(-lx, lx),
+                                fracY.coerceIn(-ly, ly),
+                            )
                         },
-                        modifier = Modifier.width(92.dp),
+                        modifier = Modifier.width(140.dp),
                     )
                 }
             }
         }
     }
+}
+
+/** 一句话说清当前是「完整显示」还是「已铺满」。 */
+private fun wallpaperSizeHint(scale: Float, fillScale: Float): String {
+    if (scale < fillScale - 0.01f) {
+        val target = String.format("%.1f", fillScale)
+        return "当前：完整显示，四周留模糊底。放大到 " + target + "× 可铺满"
+    }
+    val now = String.format("%.1f", scale)
+    return "当前：已铺满屏幕 " + now + "×"
 }
