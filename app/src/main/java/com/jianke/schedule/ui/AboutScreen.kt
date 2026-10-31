@@ -2,29 +2,28 @@ package com.jianke.schedule.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -55,99 +54,47 @@ private val CREDITS = listOf(
 )
 
 /**
- * 关于页：固定一屏，不滚动。
+ * 系统字号超过这个倍数时改用「自然高度 + 滚动」。
+ * 再往上每一行都塞不进按比例分到的高度，分隔线会压到文字上。
+ */
+private const val STRETCH_MAX_FONT_SCALE = 1.35f
+
+/**
+ * 关于页。
  *
- * 原来整页是 scrollable 的，字体稍大就会滑，一滑就和上面固定的标题栏、下面的 Dock 脱开。
- * 这里改成按屏高分布：应用卡片 / 作者+鸣谢 / 页脚 三块用 SpaceBetween 摊匀，
- * 空间富余时自动拉开间距（看起来是设计好的），空间紧张时间距先归零。
+ * 默认（1.0～1.3 倍字号）是一屏固定、不滚动的：应用信息 / 作者 / 鸣谢 / 页脚 按内容比例分配高度，
+ * 两张名单卡片自己撑开、行在卡内等分——这样卡片是「铺满」的，不会出现卡片很小、上下大片留白。
  *
- * 行距已按最紧的常用字号压过，实测 1.0 与 1.3 倍字体都能一屏放下且内容完整。
+ * 系统字号调到 1.35 倍以上时，一屏已经塞不下自然排版的九行名单，
+ * 强行等分会把分隔线压到字上；这时回退成自然高度 + 允许滚动，宁可滑也不能压字或丢内容。
  */
 @Composable
 fun AboutScreen() {
-    // 内容至少撑满一屏，SpaceBetween 才能把三块均匀摊开；
-    // 只有系统字号被调到一屏确实装不下时才会出现滚动，避免把内容裁掉。
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val viewportHeight = maxHeight
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .heightIn(min = viewportHeight)
-                .padding(horizontal = Ui.Page),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            cornerRadius = 18.dp,
-            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // 直接用应用图标本身当标识，比一个手画的圆圈感叹号更像是「这个 App」
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(colorResource(R.color.ic_launcher_background)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        painter = painterResource(R.mipmap.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text(text = "广小课", style = MiuixTheme.textStyles.title3)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "版本 " + BuildConfig.VERSION_NAME,
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onBackgroundVariant,
-                    )
-                }
-            }
-            Spacer(Modifier.height(11.dp))
-            Hairline()
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = UPDATE_WARNING,
-                style = MiuixTheme.textStyles.footnote1,
-                lineHeight = 18.sp,
-                color = Color(0xFFE53935),
-            )
+    val stretch = LocalDensity.current.fontScale <= STRETCH_MAX_FONT_SCALE
+
+    val modifier = Modifier
+        .fillMaxSize()
+        .then(if (stretch) Modifier else Modifier.verticalScroll(rememberScrollState()))
+        .padding(horizontal = Ui.Page)
+
+    Column(modifier = modifier) {
+        AppInfoCard()
+
+        SectionTitle("作者")
+        if (stretch) {
+            // 权重按行数分：作者 2 行、鸣谢 7 行，两张卡加起来正好吃掉剩余高度
+            StretchCreditCard(items = AUTHORS, modifier = Modifier.weight(AUTHORS.size.toFloat()))
+        } else {
+            NaturalCreditCard(items = AUTHORS)
         }
 
-        // 中间一块：作者 + 鸣谢
-        Column {
-            SectionTitle("作者")
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = Ui.CardCorner,
-                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-            ) {
-                AUTHORS.forEachIndexed { index, (name, role) ->
-                    if (index > 0) Hairline()
-                    CreditRow(name = name, role = role)
-                }
-            }
-
-            SectionTitle("鸣谢")
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = Ui.CardCorner,
-                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-            ) {
-                CREDITS.forEachIndexed { index, (name, role) ->
-                    if (index > 0) Hairline()
-                    CreditRow(name = name, role = role)
-                }
-            }
+        SectionTitle("鸣谢")
+        if (stretch) {
+            StretchCreditCard(items = CREDITS, modifier = Modifier.weight(CREDITS.size.toFloat()))
+        } else {
+            NaturalCreditCard(items = CREDITS)
         }
 
-        // 页脚：三块之一，SpaceBetween 会把剩余空间摊到它和上面那两块之间
         Text(
             text = "用 Kotlin 与 Jetpack Compose 写成",
             style = MiuixTheme.textStyles.footnote2,
@@ -155,8 +102,98 @@ fun AboutScreen() {
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            )
+                .padding(vertical = if (stretch) 10.dp else 20.dp),
+        )
+    }
+}
+
+/** 顶部应用信息卡：图标、名称、版本，以及那句红字提醒。 */
+@Composable
+private fun AppInfoCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp),
+        cornerRadius = 18.dp,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 直接用应用图标本身当标识，比一个手画的圆圈感叹号更像是「这个 App」
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(colorResource(R.color.ic_launcher_background)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(text = "广小课", style = MiuixTheme.textStyles.title3)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "版本 " + BuildConfig.VERSION_NAME,
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(11.dp))
+        Hairline()
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = UPDATE_WARNING,
+            style = MiuixTheme.textStyles.footnote1,
+            lineHeight = 19.sp,
+            color = Color(0xFFE53935),
+        )
+    }
+}
+
+/** 撑满卡片：整体高度由外部 weight 决定，内部每一行等分剩余高度并垂直居中。 */
+@Composable
+private fun StretchCreditCard(
+    items: List<Pair<String, String>>,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        cornerRadius = Ui.CardCorner,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxHeight()) {
+            items.forEachIndexed { index, (name, role) ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CreditRow(name = name, role = role, contentPadding = 2.dp)
+                }
+                if (index < items.lastIndex) Hairline()
+            }
+        }
+    }
+}
+
+/** 自然高度卡片：大字号时用，行按自身内容排版，整页可滚动。 */
+@Composable
+private fun NaturalCreditCard(items: List<Pair<String, String>>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = Ui.CardCorner,
+        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+    ) {
+        items.forEachIndexed { index, (name, role) ->
+            if (index > 0) Hairline()
+            CreditRow(name = name, role = role, contentPadding = 12.dp)
         }
     }
 }
@@ -166,13 +203,18 @@ private fun SectionTitle(text: String) {
     SmallTitle(text = text)
 }
 
+/** 一行名单：名字靠左、角色靠右，两者垂直居中对齐。 */
 @Composable
-private fun CreditRow(name: String, role: String) {
+private fun CreditRow(
+    name: String,
+    role: String,
+    contentPadding: androidx.compose.ui.unit.Dp,
+) {
     val isAuthor = role == "作者"
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 7.dp),
+            .padding(vertical = contentPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -181,6 +223,7 @@ private fun CreditRow(name: String, role: String) {
             fontWeight = if (isAuthor) FontWeight.Medium else FontWeight.Normal,
             modifier = Modifier.weight(1f),
         )
+        Spacer(Modifier.width(12.dp))
         Text(
             text = role,
             style = MiuixTheme.textStyles.footnote2,
