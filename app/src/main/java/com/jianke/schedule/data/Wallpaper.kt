@@ -9,78 +9,71 @@ import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
 
 /**
- * 自定义壁纸：选图 → 复制进 App 私有目录 → 解码成 ImageBitmap。
- * 只存本地，不联网；「恢复默认」就是把文件删掉。
+ * 自定义壁纸：选图 → 校验临时文件 → 替换 App 私有目录中的图片。
+ * 只有完整成功后才替换旧图，读取或解码失败不会破坏现有壁纸。
  */
 object Wallpaper {
 
     private const val FILE_NAME = "wallpaper.img"
-    private const val MAX_EDGE = 1600
-
     private const val BACKUP_NAME = "wallpaper.bak"
+    private const val TEMP_NAME = "wallpaper.tmp"
+    private const val MAX_EDGE = 1600
 
     fun file(context: Context): File = File(context.filesDir, FILE_NAME)
 
     private fun backupFile(context: Context): File = File(context.filesDir, BACKUP_NAME)
 
+    private fun tempFile(context: Context): File = File(context.filesDir, TEMP_NAME)
+
     fun hasWallpaper(context: Context): Boolean = file(context).exists()
 
-    /**
-     * 换图之前先把当前这张存一份。
-     *
-     * 「取消」要能回到换图之前的样子，但选图时新图已经落盘了，所以必须提前留底。
-     */
-    private fun backup(context: Context) {
-        runCatching {
-            val b = backupFile(context)
-            b.delete()
-            val f = file(context)
-            if (f.exists()) f.copyTo(b, overwrite = true)
-        }
-    }
+    /** 给旧图留底，供编辑器取消时恢复；没有旧图时清除陈旧备份。 */
+    private fun backup(context: Context): Boolean = runCatching {
+        val backup = backupFile(context)
+        backup.delete()
+        val current = file(context)
+        if (current.exists()) current.copyTo(backup, overwrite = true)
+    }.isSuccess
 
-    /** 把备份还原回去（没有备份 = 之前本来就没有背景，那就删掉）。 */
+    /** 还原备份；没有备份表示换图前本来就没有自定义背景。 */
     fun restoreBackup(context: Context): Boolean {
         return runCatching {
-            val b = backupFile(context)
-            val f = file(context)
-            if (b.exists()) {
-                f.delete()
-                b.copyTo(f, overwrite = true)
-                b.delete()
-                true
+            val backup = backupFile(context)
+            val current = file(context)
+            if (backup.exists()) {
+                backup.copyTo(current, overwrite = true)
+                backup.delete()
             } else {
-                // 备份不存在说明换图前根本没有自定义背景
-                f.delete()
-                true
+                current.delete()
             }
+            true
         }.getOrDefault(false)
     }
 
-    /** 确认修改后不需要还原了，把备份删掉。 */
     fun discardBackup(context: Context) {
         runCatching { backupFile(context).delete() }
     }
 
-    /** 把用户选的图片复制进来，成功返回 true。 */
+    /** 把用户选的图片写入临时文件并试解码，成功后才替换当前壁纸。 */
     fun save(context: Context, uri: Uri): Boolean {
+        val temp = tempFile(context)
+        var backupReady = false
         return try {
+            temp.delete()
             val input = context.contentResolver.openInputStream(uri) ?: return false
-            // 先给旧图留个底，「取消」时才能还原
-            backup(context)
-            val target = file(context)
-            input.use { ins ->
-                target.outputStream().use { outs -> ins.copyTo(outs) }
-            }
-            // 复制完立刻试解码一次，解不出来就当失败（避免留下坏文件）
-            if (load(context) == null) {
-                target.delete()
-                false
-            } else {
-                true
-            }
-        } catch (t: Throwable) {
+            input.use { ins -> temp.outputStream().use { outs -> ins.copyTo(outs) } }
+            // 解码成功后立即回收校验用 Bitmap，真正的界面图片仍由 load() 按需加载。
+            decodeScaled(temp.absolutePath)?.recycle() ?: return false
+
+            backupReady = backup(context)
+            if (!backupReady) return false
+            temp.copyTo(file(context), overwrite = true)
+            true
+        } catch (e: Exception) {
+            if (backupReady) restoreBackup(context)
             false
+        } finally {
+            temp.delete()
         }
     }
 
@@ -88,16 +81,16 @@ object Wallpaper {
         val f = file(context)
         if (!f.exists()) return null
         return try {
-            val bitmap = decodeScaled(f.absolutePath) ?: return null
-            bitmap.asImageBitmap()
-        } catch (t: Throwable) {
+            decodeScaled(f.absolutePath)?.asImageBitmap()
+        } catch (e: Exception) {
             null
         }
     }
 
     fun clear(context: Context) {
-        val f = file(context)
-        if (f.exists()) f.delete()
+        file(context).delete()
+        backupFile(context).delete()
+        tempFile(context).delete()
     }
 
     /** 先量尺寸再按需降采样，避免大图直接把内存吃爆。 */

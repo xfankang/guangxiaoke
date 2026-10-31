@@ -22,7 +22,11 @@ object ScheduleJs {
      */
     val fullScanScript: String = """
 (function () {
+  var token = {};
+  window.__gxkFullScanToken = token;
+  function active() { return window.__gxkFullScanToken === token; }
   function report(payload) {
+    if (!active()) { return; }
     try { window.GXKBridge.post('fullscan', String(payload)); } catch (e) { }
   }
   function txt(el) {
@@ -89,7 +93,6 @@ object ScheduleJs {
     return null;
   }
   function fire(el) {
-    try { el.click(); } catch (e) { }
     try { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } catch (e) { }
   }
   var byWeek = {};
@@ -111,6 +114,7 @@ object ScheduleJs {
     return w;
   }
   function step(dir, done) {
+    if (!active()) { return; }
     guard++;
     if (guard > 60) { done(); return; }
     var btn = findNav(dir);
@@ -119,12 +123,13 @@ object ScheduleJs {
     fire(btn);
     var tries = 0;
     var timer = setInterval(function () {
+      if (!active()) { clearInterval(timer); return; }
       tries++;
       var now = weekNo();
       if (now && now !== before) {
         clearInterval(timer);
         record();
-        setTimeout(function () { step(dir, done); }, 80);
+        setTimeout(function () { if (active()) { step(dir, done); } }, 80);
       } else if (tries > 25) {
         clearInterval(timer);
         done();
@@ -132,9 +137,12 @@ object ScheduleJs {
     }, 120);
   }
   setTimeout(function () {
+    if (!active()) { return; }
     record();
     step('>', function () {
+      if (!active()) { return; }
       step('<', function () {
+        if (!active()) { return; }
         var courses = {};
         var order = [];
         for (var i = 0; i < weekList.length; i++) {
@@ -271,14 +279,9 @@ object ScheduleJs {
   }
   var DIR = '${dir}';
   function fire(el) {
-    try { el.click(); } catch (e) { }
+    // 一次导航只发一个 click；同时派发 touch/click 会让部分页面连续翻两周。
     try {
-      var t = document.createEvent('TouchEvent');
-      t.initTouchEvent('touchend', true, true);
-      el.dispatchEvent(t);
-    } catch (e) { }
-    try {
-      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
     } catch (e) { }
   }
   var all = document.querySelectorAll('div,span,a,i,button');

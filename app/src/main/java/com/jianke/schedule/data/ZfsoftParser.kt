@@ -156,10 +156,11 @@ object ZfsoftParser {
         // 真实格式举例："4-5周,7-9周(单),10-16周"
         //   - 「周」只在每段末尾出现，不能再按 substringBefore("周") 只取第一段；
         //   - 「(单)/(双)」只作用于**它所在的那一段**，不是整串。
-        // 之前就是这两点读错，把「7-9周(单)」整段丢了，导致第 7 周少课。
         val parts = text.replace("第", "").split(",", "，", "、")
         for (raw in parts) {
             val part = raw.trim()
+            // 空段只是格式噪音（末尾多写一个逗号、连写两个逗号），跳过继续解析其余段。
+            // 不能因为它把整门课的周次判为无效，否则接口校验会白白失败、退到更慢的页面扫描。
             if (part.isEmpty()) continue
             val odd = part.contains("单")
             val even = part.contains("双")
@@ -167,7 +168,9 @@ object ZfsoftParser {
                 .map { it.value.toIntOrNull() ?: -1 }
                 .filter { it > 0 }
                 .toList()
-            if (nums.isEmpty()) continue
+            // 非空字段完全无法解析时不能再悄悄当成「每周都有」。
+            // 空列表会让接口校验拒绝这份数据，随后回退到页面扫描。
+            if (nums.isEmpty()) return emptyList()
             val from = nums.first()
             val to = if (nums.size > 1) nums[1] else from
             val lo = minOf(from, to)
@@ -181,6 +184,6 @@ object ZfsoftParser {
                 }
             }
         }
-        return if (result.isEmpty()) (1..20).toList() else result.toList()
+        return result.toList()
     }
 }

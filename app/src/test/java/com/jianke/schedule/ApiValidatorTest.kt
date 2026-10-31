@@ -152,4 +152,31 @@ class ApiValidatorTest {
         val r = ApiValidator.validate(pageCells, body, JSONObject().put("kbList", arr).toString())
         assertNull(r.courses)
     }
+
+    @Test
+    fun rejectsSingleMatchingCourseWithoutWeeks() {
+        val page = JSONArray().put(
+            JSONObject().put("t", "高等数学\n6-414").put("d", 0).put("p", 0)
+                .put("q", "1").put("h", 100),
+        )
+        val api = JSONObject().put(
+            "kbList",
+            JSONArray().put(JSONObject().put("kcmc", "高等数学").put("xqj", "1").put("jcs", "1-2")),
+        )
+        val result = ApiValidator.validate(page, "第7周", api.toString())
+        assertNull("没有周次时即使本周碰巧相同也不能直接采用接口", result.courses)
+    }
+
+    @Test
+    fun rejectsMatchingStartButDifferentDuration() {
+        val page = JSONArray().put(
+            JSONObject().put("t", "高等数学\n6-414").put("d", 0).put("p", 0)
+                .put("q", "1").put("h", 100),
+        )
+        val entry = JSONObject().put("kcmc", "高等数学").put("xqj", "1")
+            .put("jcs", "1-1").put("zcd", "7周")
+        val api = JSONObject().put("kbList", JSONArray().put(entry))
+        val result = ApiValidator.validate(page, "第7周", api.toString())
+        assertNull("起始节相同但结束节不同也必须拒绝", result.courses)
+    }
 }

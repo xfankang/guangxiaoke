@@ -7,11 +7,10 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -23,11 +22,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,7 +40,6 @@ import com.jianke.schedule.data.MobileDomParser
 import com.jianke.schedule.data.ScheduleBuilder
 import com.jianke.schedule.data.ScheduleMerger
 import com.jianke.schedule.data.ScheduleStore
-import com.jianke.schedule.data.ZfsoftParser
 import com.jianke.schedule.web.ApiProbeJs
 import com.jianke.schedule.web.ScheduleJs
 import com.jianke.schedule.web.SchoolEndpoints
@@ -107,35 +105,44 @@ fun ImportScreen(
 
     fun inject(script: String, delayMs: Long = 0L) {
         if (scan.finished) return
-        if (delayMs <= 0L) {
-            webViewRef?.evaluateJavascript(script, null)
-        } else {
-            mainHandler.postDelayed({
-                if (!scan.finished) webViewRef?.evaluateJavascript(script, null)
-            }, delayMs)
+        val expectedPhase = scan.phase
+        fun evaluate() {
+            if (!scan.finished && scan.phase == expectedPhase) {
+                webViewRef?.evaluateJavascript(script, null)
+            }
         }
+        if (delayMs <= 0L) evaluate() else mainHandler.postDelayed({ evaluate() }, delayMs)
     }
 
-    fun persist(courses: List<Course>, bodyText: String, weeks: List<Int>) {
-        val schedule = ScheduleBuilder.build(bodyText, courses, weeks)
-        ScheduleStore.save(context, schedule)
-        importedCourses = courses
-        importedCount = courses.size
-        // 把登录后的 cookie 落盘。这样「更新课表」再进来时，只要会话还没过期
-        // 就能直接拉到课表，不用重新输密码和验证码。
-        runCatching { android.webkit.CookieManager.getInstance().flush() }
+    fun persist(courses: List<Course>, bodyText: String, weeks: List<Int>): Boolean {
+        return try {
+            val schedule = ScheduleBuilder.build(bodyText, courses, weeks)
+            ScheduleStore.save(context, schedule)
+            importedCourses = courses
+            importedCount = courses.size
+            // 只有保存成功后才同步会话，失败时保留旧课表并给出可见错误。
+            runCatching { android.webkit.CookieManager.getInstance().flush() }
+            true
+        } catch (e: Exception) {
+            status = "课表保存失败"
+            failure = "课程已经解析完成，但无法写入本地存储。请检查手机剩余空间后重试。"
+            false
+        }
     }
 
     fun saveAndFinish(courses: List<Course>, bodyText: String, weeks: List<Int>, via: String) {
         if (scan.finished) return
         scan.finished = true
-        persist(courses, bodyText, weeks)
-        status = "已导入 " + courses.size + " 门课（" + via + "）"
+        if (persist(courses, bodyText, weeks)) {
+            status = "已导入 " + courses.size + " 门课（" + via + "）"
+        }
     }
 
     fun startSlowScan() {
         if (scan.finished || scan.phase == PHASE_SLOW) return
         scan.phase = PHASE_SLOW
+        // 让仍在页面内运行的整学期扫描立即失效，避免两套翻周循环互相抢页面。
+        inject("window.__gxkFullScanToken = null;")
         status = "正在逐周读取…"
         inject(ScheduleJs.scrapeScript, 300L)
     }
@@ -143,14 +150,12 @@ fun ImportScreen(
     fun startFastScan() {
         if (scan.finished || scan.phase == PHASE_FAST || scan.phase == PHASE_SLOW) return
         scan.phase = PHASE_FAST
-        // 接口没通过校验时也会走到这里，页面解析依然是最终来源
         status = "正在一次性读取整学期…"
         inject(ScheduleJs.fullScanScript, 300L)
         mainHandler.postDelayed({
             if (!scan.finished && scan.phase == PHASE_FAST) startSlowScan()
         }, 40000L)
     }
-
 
     fun finishWithWeekMap() {
         if (scan.finished) return
@@ -162,8 +167,9 @@ fun ImportScreen(
             failure = Diagnostics.summarize(lastRaw)
             return
         }
-        persist(merged, scan.lastBody, scan.byWeek.keys.toList())
-        status = "已导入 " + merged.size + " 门课（扫描 " + scan.byWeek.size + " 周）"
+        if (persist(merged, scan.lastBody, scan.byWeek.keys.toList())) {
+            status = "已导入 " + merged.size + " 门课（扫描 " + scan.byWeek.size + " 周）"
+        }
     }
 
     /**
@@ -342,11 +348,27 @@ fun ImportScreen(
 
     val handleMessage: (String, String) -> Unit = { kind, payload ->
         when (kind) {
-            "api" -> handleApi(payload)
-            "fullscan" -> handleFullScan(payload)
-            "scrape" -> handleScrape(payload)
-            "nav" -> handleNav(payload)
-            "error" -> ScheduleStore.appendDebugLog(context, payload)
+            // 超时或回退后到达的旧回调必须丢弃，不能覆盖当前阶段的结果。
+            "api" -> if (scan.phase == PHASE_API) handleApi(payload)
+            "fullscan" -> if (scan.phase == PHASE_FAST) handleFullScan(payload)
+            "scrape" -> if (scan.phase == PHASE_SLOW) handleScrape(payload)
+            "nav" -> if (scan.phase == PHASE_SLOW) handleNav(payload)
+            "error" -> runCatching { ScheduleStore.appendDebugLog(context, payload) }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            scan.finished = true
+            mainHandler.removeCallbacksAndMessages(null)
+            webViewRef?.let { webView ->
+                webView.stopLoading()
+                webView.removeJavascriptInterface(ScheduleJs.BRIDGE_NAME)
+                webView.settings.javaScriptEnabled = false
+                webView.clearHistory()
+                webView.removeAllViews()
+                webView.destroy()
+            }
         }
     }
 
@@ -487,34 +509,51 @@ fun ImportScreen(
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
                         settings.cacheMode = WebSettings.LOAD_NO_CACHE
-                        settings.javaScriptCanOpenWindowsAutomatically = true
+                        settings.javaScriptCanOpenWindowsAutomatically = false
                         settings.setSupportMultipleWindows(false)
-                        try {
-                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        } catch (ignored: Throwable) {
-                        }
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         addJavascriptInterface(
                             object {
                                 @JavascriptInterface
                                 fun post(kind: String, payload: String) {
-                                    mainHandler.post { handleMessage(kind, payload) }
+                                    mainHandler.post {
+                                        val currentUrl = webViewRef?.url
+                                        if (!scan.finished && SchoolEndpoints.isCourseSystemUrl(currentUrl)) {
+                                            handleMessage(kind, payload)
+                                        }
+                                    }
                                 }
                             },
                             ScheduleJs.BRIDGE_NAME,
                         )
                         webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView,
+                                request: WebResourceRequest,
+                            ): Boolean {
+                                val url = request.url.toString()
+                                if (SchoolEndpoints.isTrustedUrl(url)) return false
+                                if (request.isForMainFrame) status = "已阻止打开非学校页面"
+                                return true
+                            }
+
                             override fun onPageFinished(view: WebView, url: String) {
                                 if (scan.finished) return
+                                if (!SchoolEndpoints.isTrustedUrl(url)) {
+                                    scan.tableRequested = false
+                                    return
+                                }
                                 if (url.contains("login_slogin")) {
                                     scan.tableRequested = false
                                     status = "这里是教务本地登录；普通学生请用统一身份认证"
                                     return
                                 }
-                                if (!url.contains(SchoolEndpoints.JW_HOST) || url.contains("/sso/")) {
+                                if (!SchoolEndpoints.isCourseSystemUrl(url) || url.contains("/sso/")) {
                                     scan.tableRequested = false
                                     status = "请用学号和密码登录统一身份认证"
                                     return

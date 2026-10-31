@@ -166,16 +166,20 @@ object MobileDomParser {
         ""
     }
 
-    /** 页面里出现的所有周次（用于知道一共几周）。 */
+    /** 页面里出现的所有周次；兼容当前整学期扫描和旧版 sweep 格式。 */
     fun weeksOf(raw: String): List<Int> {
         return try {
             val root = JSONObject(raw)
-            val sweep = root.optJSONObject("sweep")
-            val arr = sweep?.optJSONArray("weeks") ?: return emptyList()
-            val out = ArrayList<Int>()
-            for (i in 0 until arr.length()) out.add(arr.optInt(i))
-            out
-        } catch (t: Throwable) {
+            val arr = root.optJSONArray("weeks")
+                ?: root.optJSONObject("sweep")?.optJSONArray("weeks")
+                ?: return emptyList()
+            val out = sortedSetOf<Int>()
+            for (i in 0 until arr.length()) {
+                val week = arr.optInt(i)
+                if (week in 1..30) out.add(week)
+            }
+            out.toList()
+        } catch (e: Exception) {
             emptyList()
         }
     }
@@ -196,12 +200,12 @@ object MobileDomParser {
         return Math.round(height / unit).toInt().coerceIn(1, 6)
     }
 
-    /** "rgb(231, 108, 108)" -> 0xFFE76C6C */
+    /** "rgb(231, 108, 108)" -> 0xFFE76C6C；非法颜色不进入位运算。 */
     fun parseColor(text: String): Int {
         val m = Regex("([0-9]{1,3})\\s*,\\s*([0-9]{1,3})\\s*,\\s*([0-9]{1,3})").find(text) ?: return 0
-        val r = m.groupValues[1].toIntOrNull() ?: return 0
-        val g = m.groupValues[2].toIntOrNull() ?: return 0
-        val b = m.groupValues[3].toIntOrNull() ?: return 0
+        val channels = m.groupValues.drop(1).map { it.toIntOrNull() ?: return 0 }
+        if (channels.any { it !in 0..255 }) return 0
+        val (r, g, b) = channels
         return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
 }

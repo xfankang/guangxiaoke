@@ -106,4 +106,23 @@ class ZfsoftParserTest {
         val c = ZfsoftParser.parseCourses(raw)!![0]
         assertEquals(listOf(1, 3, 5, 7, 9, 11, 13, 15), c.weeks)
     }
+
+    @Test
+    fun malformedWeekTextDoesNotBecomeEveryWeek() {
+        assertTrue(ZfsoftParser.parseWeeks("未知周次").isEmpty())
+        assertTrue(ZfsoftParser.parseWeeks("1-5周,未知").isEmpty())
+        assertTrue(ZfsoftParser.parseWeeks("99周").isEmpty())
+    }
+
+    /**
+     * 多写一个逗号只是格式噪音，不能因此把整门课的周次判为无效。
+     * 这种串一旦被拒，接口校验就会失败并回退到更慢的页面扫描。
+     */
+    @Test
+    fun strayCommasAreIgnored() {
+        assertEquals(listOf(4, 5), ZfsoftParser.parseWeeks("4-5周,"))
+        assertEquals(listOf(4, 5), ZfsoftParser.parseWeeks(",4-5周"))
+        assertEquals(listOf(4, 5), ZfsoftParser.parseWeeks("4-5周,,"))
+        assertEquals(listOf(4, 5, 9), ZfsoftParser.parseWeeks("4-5周，  ,9周"))
+    }
 }

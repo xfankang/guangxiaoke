@@ -25,7 +25,8 @@ object ApiValidator {
     fun normName(s: String): String =
         s.replace(Regex("[\\s()（）\\[\\]【】·、,，.。\\-—_/\\\\]"), "").uppercase()
 
-    fun keyOf(c: Course): String = normName(c.name) + "|" + c.dayOfWeek + "|" + c.startPeriod
+    fun keyOf(c: Course): String =
+        normName(c.name) + "|" + c.dayOfWeek + "|" + c.startPeriod + "|" + c.endPeriod
 
     /** 把返回里所有「像课程记录」的对象收集起来（不限 kbList），用于诊断。 */
     private fun collectEntries(apiText: String): List<org.json.JSONObject> {
@@ -60,6 +61,13 @@ object ApiValidator {
 
         val all = ZfsoftParser.parseCourses(apiText, bigPeriodMode)
             ?: return Result(null, "接口返回解析失败")
+        val invalidWeeks = all.filter { it.weeksText.isBlank() || it.weeks.isEmpty() }
+        if (invalidWeeks.isNotEmpty()) {
+            return Result(
+                null,
+                "接口有 " + invalidWeeks.size + " 条记录没有可解析的周次，拒绝把未知周次当成每周都有",
+            )
+        }
 
         val apiThisWeek = all.filter { it.isInWeek(currentWeek) }
         val pageKeys = pageCourses.map { keyOf(it) }.toSet()

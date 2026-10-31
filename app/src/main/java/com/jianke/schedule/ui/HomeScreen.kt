@@ -54,7 +54,6 @@ import androidx.compose.ui.window.PopupProperties
 import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.Schedule
 import com.jianke.schedule.data.layoutDay
-import com.jianke.schedule.data.rowIndexOf
 import com.jianke.schedule.data.schoolBigPeriods
 import com.jianke.schedule.data.schoolLessonTimes
 import kotlinx.coroutines.launch
@@ -500,17 +499,10 @@ private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
     MiuixTheme.colorScheme.onBackgroundVariant
 }
 
-private fun rowIndexOf(period: Int): Int =
-    schoolBigPeriods.firstOrNull { period in it.startPeriod..it.endPeriod }?.row ?: 0
+// 布局计算统一使用 data/WeekLayout.kt，避免界面与测试各维护一份算法。
 
 /** 一门课在格子里的横向位置：重叠的课并排，不重叠的占满整列。 */
-private data class PlacedCourse(
-    val course: Course,
-    val startRow: Int,
-    val endRow: Int,
-    val lane: Int,
-    val lanes: Int,
-)
+
 
 /**
  * 计算某一天所有课程的摆放位置。
@@ -519,55 +511,7 @@ private data class PlacedCourse(
  * 渲染结果和以前完全一样。但选课冲突、重修撞课这类情况是真实存在的，
  * 一旦重叠就必须并排显示，否则两门课的格子会叠在一起、文字糊成一团。
  */
-private fun layoutDay(dayCourses: List<Course>): List<PlacedCourse> {
-    if (dayCourses.isEmpty()) return emptyList()
-    val sorted = dayCourses.sortedWith(
-        compareBy({ rowIndexOf(it.startPeriod) }, { rowIndexOf(it.endPeriod) }),
-    )
-    val out = ArrayList<PlacedCourse>()
-    var i = 0
-    while (i < sorted.size) {
-        // 扫出一组互相重叠的课（按开始行推进，直到不再和当前组相交）
-        val cluster = ArrayList<Course>()
-        cluster.add(sorted[i])
-        var maxEnd = rowIndexOf(sorted[i].endPeriod)
-        var j = i + 1
-        while (j < sorted.size && rowIndexOf(sorted[j].startPeriod) <= maxEnd) {
-            cluster.add(sorted[j])
-            maxEnd = maxOf(maxEnd, rowIndexOf(sorted[j].endPeriod))
-            j++
-        }
-        // 组内按「最早空出来的车道」分配，尽量少占列
-        val laneEnds = ArrayList<Int>()
-        val laneOf = HashMap<Course, Int>()
-        for (c in cluster) {
-            val s = rowIndexOf(c.startPeriod)
-            val e = rowIndexOf(c.endPeriod)
-            val free = laneEnds.indexOfFirst { it < s }
-            if (free >= 0) {
-                laneEnds[free] = e
-                laneOf[c] = free
-            } else {
-                laneEnds.add(e)
-                laneOf[c] = laneEnds.size - 1
-            }
-        }
-        val lanes = laneEnds.size
-        for (c in cluster) {
-            out.add(
-                PlacedCourse(
-                    course = c,
-                    startRow = rowIndexOf(c.startPeriod),
-                    endRow = rowIndexOf(c.endPeriod),
-                    lane = laneOf[c] ?: 0,
-                    lanes = lanes,
-                ),
-            )
-        }
-        i = j
-    }
-    return out
-}
+
 
 @Composable
 private fun WeekGrid(
@@ -576,7 +520,7 @@ private fun WeekGrid(
     onCourseClick: (Course, Rect) -> Unit,
 ) {
     val wallpaper = LocalWallpaperActive.current
-    val rects = remember { HashMap<Course, Rect>() }
+    val rects = remember(courses) { HashMap<Course, Rect>() }
     val slotColor = if (wallpaper) {
         MiuixTheme.colorScheme.surface.copy(alpha = 0.55f)
     } else {

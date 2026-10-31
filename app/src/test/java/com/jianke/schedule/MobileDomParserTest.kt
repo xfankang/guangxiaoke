@@ -156,4 +156,20 @@ class MobileDomParserTest {
 
         assertEquals(listOf(1, 2, 3, 4, 5), MobileDomParser.weeksOf(raw))
     }
+
+    @Test
+    fun readsWeeksFromCurrentFullScanFormat() {
+        val raw = JSONObject()
+            .put("weeks", JSONArray(listOf(7, 1, 7, 0, 31)))
+            .put("courses", JSONArray())
+            .put("body", "第7周")
+            .toString()
+        assertEquals(listOf(1, 7), MobileDomParser.weeksOf(raw))
+    }
+
+    @Test
+    fun rejectsOutOfRangeColorChannels() {
+        assertEquals(0, MobileDomParser.parseColor("rgb(999, 20, 30)"))
+        assertEquals(0xFF0A141E.toInt(), MobileDomParser.parseColor("rgb(10, 20, 30)"))
+    }
 }

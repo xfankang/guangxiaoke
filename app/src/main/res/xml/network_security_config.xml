@@ -5,7 +5,8 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <!-- 教务旧页面仍使用 HTTP；仅对这个主机开放，不同等信任整个学校域。 -->
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">gzist.edu.cn</domain>
+        <domain includeSubdomains="false">jw.gzist.edu.cn</domain>
     </domain-config>
 </network-security-config>
