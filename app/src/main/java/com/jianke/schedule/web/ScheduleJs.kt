@@ -73,6 +73,42 @@ object ScheduleJs {
     }
     return out;
   }
+  /** 量出「一行」的像素高度，并判断一行含 1 还是 2 小节（看 data-qsj 与行号的关系）。 */
+  function metrics() {
+    var content = document.querySelector('.Courses-content');
+    if (!content) { return { unit: 0, perRow: 1 }; }
+    var kids = content.children;
+    var rows = 0;
+    var one = 0;
+    var two = 0;
+    for (var i = 0; i < kids.length; i++) {
+      var ul = kids[i];
+      if (String(ul.tagName).toUpperCase() !== 'UL') { continue; }
+      var lis = ul.children;
+      for (var j = 0; j < lis.length; j++) {
+        var sp = lis[j].querySelector ? lis[j].querySelector('.course-hasContent') : null;
+        if (!sp) { continue; }
+        var q = parseInt(sp.getAttribute('data-qsj'), 10);
+        if (q > 0) {
+          // 第 0 行没有区分度（两种公式都得 1），只看后面的行
+          if (rows > 0) {
+            var ratio = (q - 1) / rows;
+            if (Math.abs(ratio - 2) < 0.25) { two++; } else if (Math.abs(ratio - 1) < 0.25) { one++; }
+          }
+          break;
+        }
+      }
+      rows++;
+    }
+    var h = content.offsetHeight || 0;
+    var perRow;
+    if (one + two === 0) { perRow = (rows > 0 && rows <= 6) ? 2 : 1; }
+    else { perRow = two > one ? 2 : 1; }
+    return {
+      unit: (h > 0 && rows > 0) ? h / rows : 0,
+      perRow: perRow
+    };
+  }
   function findNav(dir) {
     function nearWeek(el) {
       var p = el.parentElement;
@@ -166,10 +202,13 @@ object ScheduleJs {
         }
         var list = [];
         for (var i = 0; i < order.length; i++) { list.push(courses[order[i]]); }
+        var m = metrics();
         report('done:' + JSON.stringify({
           weeks: weekList.sort(function (a, b) { return a - b; }),
           courses: list,
-          body: body0
+          body: body0,
+          unit: m.unit,
+          perRow: m.perRow
         }));
       });
     });

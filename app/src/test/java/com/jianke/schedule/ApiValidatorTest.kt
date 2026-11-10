@@ -132,6 +132,61 @@ class ApiValidatorTest {
         assertNotNull(r.courses)
     }
 
+    /**
+     * 线上翻车复现（2026-11-10）：页面一行 = 2 小节、每行约 80px。
+     * 体育Ⅰ（羽毛球）周日第 1 节起跨 4 行，接口写的是 1-8 节。
+     * 校验必须用页面实测行高换算，否则会把跨节大课算成 1-6，误判「接口不可信」。
+     */
+    /**
+     * 页面 body 里可能先出现别的「第N周」（例如学期周次下拉框），
+     * 取当前周必须优先认表头「第11周 2026-11-10/2026-11-16」。
+     */
+    @Test
+    fun currentWeekPrefersHeaderWithDates() {
+        val body = "课表查询\n第2周\n第3周\n第11周 2026-11-10/2026-11-16\n周一\n周二"
+        assertEquals(11, ApiValidator.currentWeekOf(body))
+        assertEquals(0, ApiValidator.currentWeekOf("没有周次信息"))
+        assertEquals(7, ApiValidator.currentWeekOf("第7周"))
+    }
+
+    @Test
+    fun pageSpanUsesMeasuredRowHeight() {
+        val cells = JSONArray()
+        fun cell(name: String, day: Int, row: Int, q: Int, h: Int) {
+            cells.put(
+                JSONObject().put("t", name + "\n教室").put("d", day - 1)
+                    .put("p", row).put("q", q.toString()).put("h", h).put("col", ""),
+            )
+        }
+        cell("高等数学Ⅰ（上）", 1, 0, 1, 80)
+        cell("体育Ⅰ（羽毛球）", 7, 0, 1, 320) // 跨 4 行
+        cell("大学英语Ⅰ", 3, 1, 3, 80) // 第 1 行、起始第 3 节 → 证明一行 2 小节
+
+        val arr = JSONArray()
+        arr.put(
+            JSONObject().put("kcmc", "高等数学Ⅰ（上）").put("xqj", "1")
+                .put("jcs", "1-2").put("cdmc", "教室").put("zcd", "1-16周"),
+        )
+        arr.put(
+            JSONObject().put("kcmc", "体育Ⅰ（羽毛球）").put("xqj", "7")
+                .put("jcs", "1-8").put("cdmc", "教室").put("zcd", "第11周"),
+        )
+        arr.put(
+            JSONObject().put("kcmc", "大学英语Ⅰ").put("xqj", "3")
+                .put("jcs", "3-4").put("cdmc", "教室").put("zcd", "1-16周"),
+        )
+        val api = JSONObject().put("kbList", arr).toString()
+        val body11 = "课表查询\n第11周 2026-11-10/2026-11-16\n周一"
+
+        val ok = ApiValidator.validate(cells, body11, api, false, 80.0)
+        assertNotNull("带实测行高时应该通过校验，实际：" + ok.verdict, ok.courses)
+
+        // 不给行高（退回旧行为 50px）时，体育会被算成 1-6，必须暴露出不匹配
+        val bad = ApiValidator.validate(cells, body11, api, false, 0.0)
+        assertNull("按 50px 硬算时应判为不匹配", bad.courses)
+        assertTrue("诊断里应点名体育，实际：" + bad.verdict, bad.verdict.contains("体育"))
+    }
+
     @Test
     fun rejectsWhenWeekFieldIsMissing() {
         // 读不到周次 -> 46 条全变「每周都有」-> 本周多出 30 条 -> 必须拒绝

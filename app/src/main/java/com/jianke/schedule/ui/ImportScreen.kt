@@ -256,7 +256,10 @@ fun ImportScreen(
         val text = obj.optString("text")
         val bigMode = obj.optBoolean("bigMode")
         val body = obj.optJSONObject("meta")?.optString("body").orEmpty()
-        val result = ApiValidator.validate(obj.optJSONArray("page"), body, text, bigMode)
+        // 页面上一行（一个大节）的真实像素高度：用来把格子高度换算成小节数。
+        // 写死 50px 时，每行 2 小节的页面上跨 4 行的大课会被算成 6 小节，校验就永远对不上。
+        val pageUnit = obj.optJSONObject("meta")?.optDouble("unit", 0.0) ?: 0.0
+        val result = ApiValidator.validate(obj.optJSONArray("page"), body, text, bigMode, pageUnit)
         val courses = result.courses
         val verdict = result.verdict
         val report = buildApiReport(obj).trimEnd() + "\n\n校验结论：\n" + verdict

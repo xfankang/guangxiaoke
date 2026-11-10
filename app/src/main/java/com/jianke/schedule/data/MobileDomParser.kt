@@ -24,6 +24,7 @@ object MobileDomParser {
         if (head.length() < 5 || stages.length() < 3) return null
 
         val unit = unitHeight(grid)
+        val perRow = periodsPerRowOf(gridRowStartPairs(stages), stages.length())
         val out = ArrayList<Course>()
         for (k in 0 until stages.length()) {
             val stage = stages.optJSONObject(k) ?: continue
@@ -37,8 +38,9 @@ object MobileDomParser {
                 if (lines.isEmpty()) continue
                 val name = lines.first()
                 if (name.length < 2) continue
-                val start = cell.optString("q").toIntOrNull()?.takeIf { it in 1..15 } ?: (k + 1)
-                val span = spanOf(cell.optDouble("h", 0.0), unit)
+                val start = cell.optString("q").toIntOrNull()?.takeIf { it in 1..15 }
+                    ?: (k * perRow + 1)
+                val span = periodSpanOf(cell.optDouble("h", 0.0), unit, perRow)
                 out.add(
                     Course(
                         name = name,
@@ -67,7 +69,9 @@ object MobileDomParser {
         val sweep = root.optJSONObject("sweep") ?: return null
         if (!sweep.optBoolean("ok")) return null
         val arr = sweep.optJSONArray("courses") ?: return null
-        val unit = unitHeight(root.optJSONObject("grid"))
+        val grid = root.optJSONObject("grid")
+        val unit = unitHeight(grid)
+        val perRow = periodsPerRowOf(gridRowStartPairs(grid?.optJSONArray("stages")), grid?.optJSONArray("stages")?.length() ?: 0)
         val out = ArrayList<Course>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
@@ -77,7 +81,7 @@ object MobileDomParser {
             val w = o.optJSONArray("w")
             if (w != null) for (j in 0 until w.length()) weeks.add(w.optInt(j))
             val start = o.optInt("p", 1).takeIf { it in 1..15 } ?: continue
-            val span = spanOf(o.optDouble("h", 0.0), unit)
+            val span = periodSpanOf(o.optDouble("h", 0.0), unit, perRow)
             out.add(
                 Course(
                     name = name,
@@ -95,9 +99,22 @@ object MobileDomParser {
         return out.ifEmpty { null }
     }
 
-    /** 从页面上的原始格子（{t,d,p,q,h,col}）构造课程，用于和接口数据比对。 */
-    fun parsePageCells(cells: org.json.JSONArray?): List<Course> {
+    /**
+     * 从页面上的原始格子（{t,d,p,q,h,col}）构造课程，用于和接口数据比对。
+     *
+     * [unit] 是「一行（一个大节）的像素高度」，由调用方从整表量出来传入；
+     * 传 0 时退回默认值（老版本探测数据没有行高）。
+     */
+    fun parsePageCells(cells: org.json.JSONArray?, unit: Double = 0.0): List<Course> {
         if (cells == null) return emptyList()
+        val pairs = ArrayList<Pair<Int, Int>>()
+        for (i in 0 until cells.length()) {
+            val c = cells.optJSONObject(i) ?: continue
+            val q = c.optString("q").toIntOrNull() ?: continue
+            pairs.add(c.optInt("p") to q)
+        }
+        val perRow = periodsPerRowOf(pairs)
+        val effectiveUnit = if (unit > 10) unit else DEFAULT_UNIT
         val out = ArrayList<Course>()
         for (i in 0 until cells.length()) {
             val c = cells.optJSONObject(i) ?: continue
@@ -105,8 +122,10 @@ object MobileDomParser {
             if (lines.isEmpty()) continue
             val name = lines.first()
             if (name.length < 2) continue
-            val start = c.optString("q").toIntOrNull()?.takeIf { it in 1..15 } ?: (c.optInt("p") + 1)
-            val span = spanOf(c.optDouble("h", 0.0), 50.0)
+            // 没有 data-qsj 时按行号推：一行 2 小节的话，第 p 行起始小节 = p*2+1
+            val start = c.optString("q").toIntOrNull()?.takeIf { it in 1..15 }
+                ?: (c.optInt("p") * perRow + 1)
+            val span = periodSpanOf(c.optDouble("h", 0.0), effectiveUnit, perRow)
             out.add(
                 Course(
                     name = name,
@@ -124,7 +143,12 @@ object MobileDomParser {
         return out
     }
 
-    /** 页内快速扫描的结果（含每门课的精确周次）。 */
+    /**
+     * 页内快速扫描的结果（含每门课的精确周次）。
+     *
+     * 负一版这里按「50px 一节」硬算跨节数，页面每行 2 小节时会算成一半，
+     * 跨 4 行的大课（体育 1-8 节）会被截成 6 节。现在改用扫描时上报的实测行高。
+     */
     fun parseFullScan(raw: String): List<Course>? {
         val root = try {
             JSONObject(raw)
@@ -132,6 +156,20 @@ object MobileDomParser {
             return null
         }
         val arr = root.optJSONArray("courses") ?: return null
+        val reportedUnit = root.optDouble("unit", 0.0)
+        val reportedPerRow = root.optInt("perRow", 0)
+        // 兜底：所有格子高度都是「一行」的整数倍，最小高度就是一行的像素高
+        var minHeight = 0.0
+        for (i in 0 until arr.length()) {
+            val h = arr.optJSONObject(i)?.optDouble("h", 0.0) ?: continue
+            if (h > 0 && (minHeight <= 0 || h < minHeight)) minHeight = h
+        }
+        val unit = when {
+            reportedUnit > 10 -> reportedUnit
+            minHeight > 10 -> minHeight
+            else -> DEFAULT_UNIT
+        }
+        val perRow = if (reportedPerRow in 1..2) reportedPerRow else 1
         val out = ArrayList<Course>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
@@ -141,7 +179,7 @@ object MobileDomParser {
             val w = o.optJSONArray("w")
             if (w != null) for (j in 0 until w.length()) weeks.add(w.optInt(j))
             val start = o.optInt("p", 1).takeIf { it in 1..15 } ?: continue
-            val span = spanOf(o.optDouble("h", 0.0), 50.0)
+            val span = periodSpanOf(o.optDouble("h", 0.0), unit, perRow)
             out.add(
                 Course(
                     name = name,
@@ -184,6 +222,21 @@ object MobileDomParser {
         }
     }
 
+    /** 从整表各阶段里取「每行第一个非空格子的起始小节」，用来判断一行含几小节。 */
+    private fun gridRowStartPairs(stages: org.json.JSONArray?): List<Pair<Int, Int>> {
+        if (stages == null) return emptyList()
+        val pairs = ArrayList<Pair<Int, Int>>()
+        for (k in 0 until stages.length()) {
+            val cells = stages.optJSONObject(k)?.optJSONArray("cells") ?: continue
+            for (j in 0 until cells.length()) {
+                val q = cells.optJSONObject(j)?.optString("q")?.toIntOrNull() ?: continue
+                pairs.add(k to q)
+                break
+            }
+        }
+        return pairs
+    }
+
     private fun unitHeight(grid: JSONObject?): Double {
         if (grid == null) return 50.0
         val contentH = grid.optDouble("contentH", 0.0)
@@ -195,10 +248,57 @@ object MobileDomParser {
         return 50.0
     }
 
-    private fun spanOf(height: Double, unit: Double): Int {
-        if (height <= 0 || unit <= 0) return 1
-        return Math.round(height / unit).toInt().coerceIn(1, 6)
+    /**
+     * 页面上「一行」（一个大节）经常含 2 小节，但个别页面/版本是 1 行 1 小节。
+     * 不能写死：用 data-qsj（起始小节）和行号的关系反推 ——
+     *   q = 行号 + 1    -> 一行 1 小节
+     *   q = 行号 * 2 + 1 -> 一行 2 小节
+     */
+    internal fun periodsPerRowOf(pairs: List<Pair<Int, Int>>, stages: Int = 0): Int {
+        var one = 0
+        var two = 0
+        for ((row, q) in pairs) {
+            // 第 0 行两种公式都得 1（0+1 == 0*2+1），没有区分度，跳过
+            if (q <= 0 || row <= 0) continue
+            // (起始小节 - 1) / 行号：一行 1 小节 ≈ 1，一行 2 小节 ≈ 2
+            val ratio = (q - 1).toDouble() / row
+            when {
+                Math.abs(ratio - 2.0) < 0.25 -> two++
+                Math.abs(ratio - 1.0) < 0.25 -> one++
+            }
+        }
+        if (one + two == 0) {
+            // 这一周没有可判定的行（例如只有第 0 行有课）：按整表行数猜。
+            // 5 行左右说明一行是一个大节；10 行以上说明一行就是一节课。
+            return if (stages in 1..6) 2 else 1
+        }
+        return if (two > one) 2 else 1
     }
+
+    /** 一行（一个大节）的像素高度；拿不到就返回 0，由调用方退回默认值。 */
+    internal fun unitOf(contentH: Double, rows: Int): Double {
+        if (contentH > 0 && rows > 0) {
+            val u = contentH / rows
+            if (u > 10) return u
+        }
+        return 0.0
+    }
+
+    /**
+     * 一格跨多少「小节」= 跨几行 × 每行小节数。
+     * 旧实现直接拿 height/50 当小节数：页面每行 2 小节时，跨 4 行的大课
+     * 会被算成 6 小节而不是 8，导致「体育」这类课被截短、接口校验也对不上。
+     */
+    internal fun periodSpanOf(height: Double, unit: Double, perRow: Int): Int {
+        val rows = if (height > 0 && unit > 0) {
+            Math.round(height / unit).toInt().coerceIn(1, 12)
+        } else {
+            1
+        }
+        return (rows * perRow).coerceIn(1, 24)
+    }
+
+    private const val DEFAULT_UNIT = 50.0
 
     /** "rgb(231, 108, 108)" -> 0xFFE76C6C；非法颜色不进入位运算。 */
     fun parseColor(text: String): Int {

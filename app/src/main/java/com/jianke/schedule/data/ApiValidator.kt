@@ -19,7 +19,15 @@ object ApiValidator {
 
     data class Result(val courses: List<Course>?, val verdict: String)
 
+    /** 表头形式「第11周 2026-11-10/2026-11-16」最可靠，优先用它；没有再退回宽松匹配。 */
+    private val WEEK_HEADER_REGEX = Regex("第\\s*([0-9]{1,2})\\s*周\\s*[0-9]{4}-[0-9]{2}-[0-9]{2}")
     private val WEEK_REGEX = Regex("第\\s*([0-9]+)\\s*周")
+
+    /** 从页面文字里取出「当前是第几周」；优先表头，避免抓到下拉框里的其它周次。 */
+    fun currentWeekOf(bodyText: String): Int {
+        WEEK_HEADER_REGEX.find(bodyText)?.groupValues?.get(1)?.toIntOrNull()?.let { if (it in 1..30) return it }
+        return WEEK_REGEX.find(bodyText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+    }
 
     /** 课程名归一化：忽略全半角括号、空格、标点差异。 */
     fun normName(s: String): String =
@@ -47,16 +55,21 @@ object ApiValidator {
         return out
     }
 
+    /**
+     * @param pageUnit 页面上一行（一个大节）的像素高度；0 表示探测数据没带，退回默认值。
+     *   不传会用默认 50px，页面实际每行 ~80px 时跨节大课会被算短、校验必然失败。
+     */
     fun validate(
         pageCells: JSONArray?,
         bodyText: String,
         apiText: String,
         bigPeriodMode: Boolean = false,
+        pageUnit: Double = 0.0,
     ): Result {
-        val currentWeek = WEEK_REGEX.find(bodyText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val currentWeek = currentWeekOf(bodyText)
         if (currentWeek == 0) return Result(null, "没能从页面读出当前是第几周")
 
-        val pageCourses = MobileDomParser.parsePageCells(pageCells)
+        val pageCourses = MobileDomParser.parsePageCells(pageCells, pageUnit)
         if (pageCourses.isEmpty()) return Result(null, "页面上没抓到课，无法作为校验基准")
 
         val all = ZfsoftParser.parseCourses(apiText, bigPeriodMode)

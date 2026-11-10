@@ -37,11 +37,15 @@ object ApiProbeJs {
   }
 
   var pageCells = [];
+  var ulCount = 0;
+  var onePerRow = 0;
+  var twoPerRow = 0;
   var content = document.querySelector('.Courses-content');
   if (content) {
     var uls = content.children;
     for (var i = 0; i < uls.length; i++) {
       if (String(uls[i].tagName).toUpperCase() !== 'UL') { continue; }
+      ulCount++;
       var lis = uls[i].children;
       for (var j = 0; j < lis.length; j++) {
         var span = lis[j].querySelector ? lis[j].querySelector('.course-hasContent') : null;
@@ -59,6 +63,11 @@ object ApiProbeJs {
           h: hm ? parseFloat(hm[1]) : 0,
           col: cm ? cm[1] : ''
         });
+        var qv = parseInt(span.getAttribute('data-qsj'), 10);
+        if (qv > 0 && i > 0) {
+          var ratio = (qv - 1) / i;
+          if (Math.abs(ratio - 2) < 0.25) { twoPerRow++; } else if (Math.abs(ratio - 1) < 0.25) { onePerRow++; }
+        }
       }
     }
   }
@@ -66,7 +75,15 @@ object ApiProbeJs {
   var body = (document.body ? (document.body.innerText || '') : '').slice(0, 3000);
   var xnm = field('xnm_hide');
   var xqm = field('xqm_hide');
-  var meta = { xnm: xnm, xqm: xqm, body: body, pageCount: pageCells.length };
+  var contentH = content ? (content.offsetHeight || 0) : 0;
+  var meta = {
+    xnm: xnm,
+    xqm: xqm,
+    body: body,
+    pageCount: pageCells.length,
+    unit: (contentH > 0 && ulCount > 0) ? contentH / ulCount : 0,
+    perRow: (onePerRow + twoPerRow === 0) ? ((ulCount > 0 && ulCount <= 6) ? 2 : 1) : (twoPerRow > onePerRow ? 2 : 1)
+  };
 
   function scoreOf(apiText) {
     var data;

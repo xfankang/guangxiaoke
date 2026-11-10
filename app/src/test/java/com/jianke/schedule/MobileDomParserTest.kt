@@ -167,6 +167,89 @@ class MobileDomParserTest {
         assertEquals(listOf(1, 7), MobileDomParser.weeksOf(raw))
     }
 
+    /**
+     * 真实页面（2026-11-10 线上日志反推）：5 行、**一行 2 小节**、整表 400px（每行 80px）。
+     * 「体育Ⅰ（羽毛球）」周日第 1 节起跨 4 行，正确结果应是 1-8 节。
+     * 旧实现按「50px 一节」硬算会得到 6 小节，把课截短成 1-6。
+     */
+    @Test
+    fun convertsBigPeriodRowsToSmallPeriods() {
+        val stages = JSONArray()
+        val sevenEmpty = { stage(empty(), empty(), empty(), empty(), empty(), empty(), empty()) }
+        // 第 0 行：周一高数 + 周日体育（体育跨 4 行，高度 4 × 80 = 320）
+        stages.put(
+            stage(
+                cell("高等数学Ⅰ（上）\n6-414", 80, "1", "rgb(231, 108, 108)"),
+                empty(), empty(), empty(), empty(), empty(),
+                cell("体育Ⅰ（羽毛球）\n体育馆", 320, "1", "rgb(250, 211, 84)"),
+            ),
+        )
+        // 第 1 行：周三英语（起始第 3 节）—— 这一行决定了「一行 = 2 小节」
+        stages.put(
+            stage(
+                empty(), empty(),
+                cell("大学英语Ⅰ\n7-202", 80, "3", "rgb(246, 163, 84)"),
+                empty(), empty(), empty(), empty(),
+            ),
+        )
+        for (i in 2 until 5) stages.put(sevenEmpty())
+
+        val g = JSONObject()
+            .put("head", JSONArray(listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")))
+            .put("dates", JSONArray(listOf("11-9", "11-10", "11-11", "11-12", "11-13", "11-14", "11-15")))
+            .put("hidden", JSONObject().put("xnm_hide", "2026").put("xqm_hide", "3"))
+            .put("contentH", 400)
+            .put("stages", stages)
+        val raw = JSONObject().put("bodyText", "第11周").put("grid", g).toString()
+
+        val courses = MobileDomParser.parse(raw)
+        assertNotNull(courses)
+        val pe = courses!!.first { it.name.startsWith("体育") }
+        assertEquals(7, pe.dayOfWeek)
+        assertEquals(1, pe.startPeriod)
+        assertEquals("跨 4 行 = 8 小节", 8, pe.endPeriod)
+        val math = courses.first { it.name.startsWith("高等数学") }
+        assertEquals(2, math.endPeriod)
+        val eng = courses.first { it.name.startsWith("大学英语") }
+        assertEquals(3, eng.startPeriod)
+        assertEquals(4, eng.endPeriod)
+    }
+
+    /** 页面个别格子缺 data-qsj 时，起始节次要按「每行几小节」推，不能一律按行号+1。 */
+    @Test
+    fun missingStartPeriodFallsBackToRowsPerPage() {
+        val stages = JSONArray()
+        val sevenEmpty = { stage(empty(), empty(), empty(), empty(), empty(), empty(), empty()) }
+        // 第 1 行（行号 1）、没有 data-qsj：一行 2 小节时应推成第 3 节
+        stages.put(sevenEmpty())
+        stages.put(
+            stage(
+                empty(), empty(),
+                cell("大学英语Ⅰ\n7-202", 80, "", "rgb(246, 163, 84)"),
+                empty(), empty(), empty(), empty(),
+            ),
+        )
+        // 第 0 行放一门带 q 的课，用来判定「一行 2 小节」
+        stages.put(
+            stage(
+                cell("体育Ⅰ（羽毛球）\n体育馆", 320, "1", "rgb(250, 211, 84)"),
+                empty(), empty(), empty(), empty(), empty(), empty(),
+            ),
+        )
+        for (i in 3 until 5) stages.put(sevenEmpty())
+
+        val g = JSONObject()
+            .put("head", JSONArray(listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")))
+            .put("dates", JSONArray(listOf("11-9", "11-10", "11-11", "11-12", "11-13", "11-14", "11-15")))
+            .put("hidden", JSONObject().put("xnm_hide", "2026").put("xqm_hide", "3"))
+            .put("contentH", 400)
+            .put("stages", stages)
+        val courses = MobileDomParser.parse(JSONObject().put("bodyText", "第11周").put("grid", g).toString())
+        assertNotNull(courses)
+        val eng = courses!!.first { it.name.startsWith("大学英语") }
+        assertEquals("缺 data-qsj 时应按每行 2 小节推成第 3 节", 3, eng.startPeriod)
+    }
+
     @Test
     fun rejectsOutOfRangeColorChannels() {
         assertEquals(0, MobileDomParser.parseColor("rgb(999, 20, 30)"))
