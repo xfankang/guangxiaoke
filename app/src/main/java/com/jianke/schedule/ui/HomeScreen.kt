@@ -35,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -461,7 +460,6 @@ private fun DayHeader(dates: List<LocalDate?>, isCurrentWeek: Boolean) {
     Spacer(Modifier.height(6.dp))
 }
 
-/** 走字位（第几节 + 上课时间）的颜色：壁纸模式下不能再用低对比的次要色。 */
 /**
  * 课表太久没更新时的提醒条。
  *
@@ -492,6 +490,7 @@ private fun StaleHint(updatedAt: Long, onImport: () -> Unit) {
     }
 }
 
+/** 走字位（第几节 + 上课时间）的颜色：壁纸模式下压在图上，不能再用低对比的次要色。 */
 @Composable
 private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
     MiuixTheme.colorScheme.onBackground
@@ -499,19 +498,7 @@ private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
     MiuixTheme.colorScheme.onBackgroundVariant
 }
 
-// 布局计算统一使用 data/WeekLayout.kt，避免界面与测试各维护一份算法。
-
-/** 一门课在格子里的横向位置：重叠的课并排，不重叠的占满整列。 */
-
-
-/**
- * 计算某一天所有课程的摆放位置。
- *
- * 正常情况下一天里不会有时间重叠的课，此时每门课都独占整列（lanes = 1），
- * 渲染结果和以前完全一样。但选课冲突、重修撞课这类情况是真实存在的，
- * 一旦重叠就必须并排显示，否则两门课的格子会叠在一起、文字糊成一团。
- */
-
+// 摆放算法统一使用 data/WeekLayout.kt，避免界面与测试各维护一份。
 
 @Composable
 private fun WeekGrid(

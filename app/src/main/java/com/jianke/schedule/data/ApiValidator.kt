@@ -19,15 +19,12 @@ object ApiValidator {
 
     data class Result(val courses: List<Course>?, val verdict: String)
 
-    /** 表头形式「第11周 2026-11-10/2026-11-16」最可靠，优先用它；没有再退回宽松匹配。 */
-    private val WEEK_HEADER_REGEX = Regex("第\\s*([0-9]{1,2})\\s*周\\s*[0-9]{4}-[0-9]{2}-[0-9]{2}")
-    private val WEEK_REGEX = Regex("第\\s*([0-9]+)\\s*周")
-
-    /** 从页面文字里取出「当前是第几周」；优先表头，避免抓到下拉框里的其它周次。 */
-    fun currentWeekOf(bodyText: String): Int {
-        WEEK_HEADER_REGEX.find(bodyText)?.groupValues?.get(1)?.toIntOrNull()?.let { if (it in 1..30) return it }
-        return WEEK_REGEX.find(bodyText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-    }
+    /**
+     * 从页面文字里取出「当前是第几周」。
+     * 优先认表头「第11周 2026-11-10/2026-11-16」，避免抓到下拉框里的其它周次；
+     * 识别逻辑统一收敛在 [WeekParser]，逐周扫描、学期起点反推也走同一份。
+     */
+    fun currentWeekOf(bodyText: String): Int = WeekParser.currentWeekOf(bodyText)
 
     /** 课程名归一化：忽略全半角括号、空格、标点差异。 */
     fun normName(s: String): String =

@@ -52,6 +52,21 @@ class ScheduleMergerTest {
     }
 
     @Test
+    fun duplicateCellsWithinOneWeekDoNotDuplicateWeeks() {
+        // 同一周里同一个格子出现两次（页面渲染重复）时，weeks 不能塞进重复项；
+        // 落盘解码会 distinct()，内存态不去重就会和磁盘态不一致
+        val math = c("高等数学Ⅰ（上）", 1, 1)
+        val merged = ScheduleMerger.merge(
+            mapOf(
+                1 to listOf(math, math),
+                2 to listOf(math),
+            ),
+        )
+        assertEquals(1, merged.size)
+        assertEquals(listOf(1, 2), merged[0].weeks)
+    }
+
+    @Test
     fun differentRoomsAreDifferentOccurrences() {
         val merged = ScheduleMerger.merge(
             mapOf(

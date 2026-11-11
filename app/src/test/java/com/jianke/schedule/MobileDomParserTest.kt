@@ -4,7 +4,6 @@ import com.jianke.schedule.data.MobileDomParser
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -121,43 +120,6 @@ class MobileDomParserTest {
     }
 
     @Test
-    fun mergesWeekSweep() {
-        val courses = JSONArray()
-        courses.put(
-            JSONObject().put("n", "军事理论").put("r", "7-218").put("d", 5).put("p", 7)
-                .put("h", 100).put("col", "rgb(10, 20, 30)").put("w", JSONArray(listOf(1, 3, 5))),
-        )
-        courses.put(
-            JSONObject().put("n", "体育Ⅰ（羽毛球）").put("r", "图书馆12楼").put("d", 2).put("p", 5)
-                .put("h", 100).put("col", "").put("w", JSONArray(listOf(1, 2, 3, 4))),
-        )
-        val sweep = JSONObject().put("ok", true)
-            .put("weeks", JSONArray(listOf(1, 2, 3, 4, 5)))
-            .put("courses", courses)
-        val raw = JSONObject()
-            .put("bodyText", "第3周 2026-09-14/2026-09-20")
-            .put("grid", grid(realStages()))
-            .put("sweep", sweep)
-            .toString()
-
-        val parsed = MobileDomParser.parseSweep(raw)
-        assertNotNull(parsed)
-        parsed!!
-        assertEquals(2, parsed.size)
-
-        val mil = parsed.first { it.name == "军事理论" }
-        assertEquals(listOf(1, 3, 5), mil.weeks)
-        assertEquals(5, mil.dayOfWeek)
-        assertEquals(7, mil.startPeriod)
-        assertEquals(8, mil.endPeriod)
-        assertTrue(mil.isInWeek(3))
-        assertFalse(mil.isInWeek(4))
-        assertTrue(mil.color != 0)
-
-        assertEquals(listOf(1, 2, 3, 4, 5), MobileDomParser.weeksOf(raw))
-    }
-
-    @Test
     fun readsWeeksFromCurrentFullScanFormat() {
         val raw = JSONObject()
             .put("weeks", JSONArray(listOf(7, 1, 7, 0, 31)))
@@ -165,6 +127,7 @@ class MobileDomParserTest {
             .put("body", "第7周")
             .toString()
         assertEquals(listOf(1, 7), MobileDomParser.weeksOf(raw))
+        assertEquals(emptyList<Int>(), MobileDomParser.weeksOf("不是 JSON"))
     }
 
     /**

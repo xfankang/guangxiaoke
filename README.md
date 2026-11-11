@@ -63,9 +63,12 @@ app/src/main/java/com/jianke/schedule/
 │   ├── ZfsoftParser.kt      正方教务接口（kbList）解析
 │   ├── ApiValidator.kt      接口数据与页面数据的双向校验
 │   ├── MobileDomParser.kt   手机版课表页 DOM 解析
+│   ├── WeekParser.kt        「当前第几周」统一识别（优先认表头）
 │   ├── ScheduleStore.kt     课表本地存储
+│   ├── ImportDiagnostics.kt 导入诊断文本（周次核对表 / 接口报告）
 │   ├── CourseColors.kt      课程配色
 │   ├── ClassTimes.kt        作息时间
+│   ├── ImageDecode.kt       图片降采样解码（壁纸 / 彩蛋共用）
 │   ├── Prefs.kt             设置存储
 │   ├── Wallpaper.kt         自定义背景
 │   └── EasterEgg.kt         彩蛋图片加载

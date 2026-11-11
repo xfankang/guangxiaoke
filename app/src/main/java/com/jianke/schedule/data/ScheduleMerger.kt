@@ -17,7 +17,8 @@ object ScheduleMerger {
         // 只抓到一周时无法判断周次，当成「每周都有」，否则会把课全藏起来
         val singleWeek = byWeek.size <= 1
         return proto.map { (key, course) ->
-            course.copy(weeks = if (singleWeek) emptyList() else weeks[key]!!.sorted())
+            // 同一周里重复出现的格子会往 weeks 里塞重复项，去重保持内存态与落盘态一致
+            course.copy(weeks = if (singleWeek) emptyList() else weeks[key]!!.distinct().sorted())
         }
     }
 

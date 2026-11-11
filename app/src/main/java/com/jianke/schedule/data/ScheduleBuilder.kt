@@ -5,8 +5,6 @@ import java.time.LocalDate
 /** 把抓到的课程整理成一份课表：反推学期开始日期、取页面上的真实作息时间。 */
 object ScheduleBuilder {
 
-    private val WEEK_REGEX = Regex("第\\s*([0-9]+)\\s*周")
-    private val DATE_REGEX = Regex("([0-9]{4})-([0-9]{2})-([0-9]{2})")
     private val PERIOD_TIME_REGEX = Regex("([0-9]{1,2})\\s*\\n\\s*([0-9]{2}:[0-9]{2})")
 
     fun build(
@@ -14,8 +12,12 @@ object ScheduleBuilder {
         courses: List<Course>,
         allWeeks: List<Int> = emptyList(),
     ): Schedule {
-        val week = WEEK_REGEX.find(bodyText)?.groupValues?.get(1)?.toIntOrNull()
-        val startDate = startDateOf(DATE_REGEX.find(bodyText)?.value, week)
+        // 优先认「第N周 日期」表头：周次和日期来自同一行，配对不会错。
+        // 之前周次、日期各用各的正则取第一个匹配，正文里一旦有别的「第N周」先出现，
+        // 两者就可能配到不同的行上去，反推出的学期起点整学期错位。
+        val header = WeekParser.headerOf(bodyText)
+        val week = header?.first ?: WeekParser.currentWeekOf(bodyText).takeIf { it > 0 }
+        val startDate = startDateOf(header?.second, week)
         val maxWeek = maxOf(
             allWeeks.maxOrNull() ?: 0,
             courses.flatMap { it.weeks }.maxOrNull() ?: 0,

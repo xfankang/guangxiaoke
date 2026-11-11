@@ -112,7 +112,9 @@ object ApiProbeJs {
         var c = pageCells[k];
         var nm = norm((c.t.split('\n')[0] || ''));
         var d = c.d + 1;
-        var p = parseInt(c.q, 10) || (c.p + 1);
+        // 缺 data-qsj 时和 Kotlin 侧 parsePageCells 用同一个兜底：按每行小节数推起始节
+        var p = parseInt(c.q, 10);
+        if (!p || p < 1) { p = c.p * meta.perRow + 1; }
         if (keys[nm + '|' + d + '|' + p]) { hit++; }
       }
       return hit / pageCells.length;

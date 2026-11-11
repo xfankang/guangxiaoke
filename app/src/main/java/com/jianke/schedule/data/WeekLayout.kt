@@ -9,9 +9,16 @@ data class PlacedCourse(
     val lanes: Int,
 )
 
-/** 第 n 小节落在第几大节（0 起）。找不到就落到第 0 行，至少保证能画出来。 */
-fun rowIndexOf(period: Int): Int =
-    schoolBigPeriods.firstOrNull { period in it.startPeriod..it.endPeriod }?.row ?: 0
+/**
+ * 第 n 小节落在第几大节（0 起）。
+ *
+ * 越界的脏数据（解析层允许 q 到 15、节次到 20）不能落回第 0 行：
+ * 那会压在 1-2 节的课上。夹到最近的一行——小于 1 归第 0 行，大于 10 归最后一行（晚上）。
+ */
+fun rowIndexOf(period: Int): Int {
+    schoolBigPeriods.firstOrNull { period in it.startPeriod..it.endPeriod }?.let { return it.row }
+    return if (period <= 1) 0 else schoolBigPeriods.last().row
+}
 
 /**
  * 计算某一天所有课程的摆放位置。

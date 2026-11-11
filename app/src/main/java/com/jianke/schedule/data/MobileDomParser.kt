@@ -59,46 +59,6 @@ object MobileDomParser {
         return out.ifEmpty { null }
     }
 
-    /** 把 1~N 周都抓过之后的合并结果（每门课带精确周次）。 */
-    fun parseSweep(raw: String): List<Course>? {
-        val root = try {
-            JSONObject(raw)
-        } catch (t: Throwable) {
-            return null
-        }
-        val sweep = root.optJSONObject("sweep") ?: return null
-        if (!sweep.optBoolean("ok")) return null
-        val arr = sweep.optJSONArray("courses") ?: return null
-        val grid = root.optJSONObject("grid")
-        val unit = unitHeight(grid)
-        val perRow = periodsPerRowOf(gridRowStartPairs(grid?.optJSONArray("stages")), grid?.optJSONArray("stages")?.length() ?: 0)
-        val out = ArrayList<Course>()
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            val name = o.optString("n")
-            if (name.length < 2) continue
-            val weeks = ArrayList<Int>()
-            val w = o.optJSONArray("w")
-            if (w != null) for (j in 0 until w.length()) weeks.add(w.optInt(j))
-            val start = o.optInt("p", 1).takeIf { it in 1..15 } ?: continue
-            val span = periodSpanOf(o.optDouble("h", 0.0), unit, perRow)
-            out.add(
-                Course(
-                    name = name,
-                    teacher = "",
-                    room = o.optString("r"),
-                    dayOfWeek = o.optInt("d", 1).coerceIn(1, 7),
-                    startPeriod = start,
-                    endPeriod = start + span - 1,
-                    weeks = weeks.sorted(),
-                    weeksText = "",
-                    color = parseColor(o.optString("col")),
-                ),
-            )
-        }
-        return out.ifEmpty { null }
-    }
-
     /**
      * 从页面上的原始格子（{t,d,p,q,h,col}）构造课程，用于和接口数据比对。
      *
@@ -204,13 +164,11 @@ object MobileDomParser {
         ""
     }
 
-    /** 页面里出现的所有周次；兼容当前整学期扫描和旧版 sweep 格式。 */
+    /** 整学期扫描结果里出现过的所有周次。 */
     fun weeksOf(raw: String): List<Int> {
         return try {
             val root = JSONObject(raw)
-            val arr = root.optJSONArray("weeks")
-                ?: root.optJSONObject("sweep")?.optJSONArray("weeks")
-                ?: return emptyList()
+            val arr = root.optJSONArray("weeks") ?: return emptyList()
             val out = sortedSetOf<Int>()
             for (i in 0 until arr.length()) {
                 val week = arr.optInt(i)

@@ -31,6 +31,16 @@ class WeekLayoutTest {
     }
 
     @Test
+    fun 越界小节夹到最近的一行() {
+        // 解析层允许脏数据（q 到 15、节次到 20）；落回第 0 行会压住 1-2 节的课
+        assertEquals(4, rowIndexOf(11))
+        assertEquals(4, rowIndexOf(12))
+        assertEquals(4, rowIndexOf(20))
+        assertEquals(0, rowIndexOf(0))
+        assertEquals(0, rowIndexOf(-3))
+    }
+
+    @Test
     fun 不重叠的课各自占满整列() {
         val list = listOf(
             c("高数", 1, 1, 2),

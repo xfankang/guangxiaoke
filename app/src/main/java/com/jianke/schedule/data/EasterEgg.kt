@@ -1,7 +1,6 @@
 package com.jianke.schedule.data
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
@@ -60,7 +59,8 @@ object EasterEgg {
     private fun loadFromAssets(context: Context, name: String): ImageBitmap? {
         return try {
             context.assets.open(name).use { stream ->
-                BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                // 和壁纸走同一个降采样解码，防止大图直接把内存吃爆
+                ImageDecode.fromStream(stream)?.asImageBitmap()
             }
         } catch (t: Throwable) {
             null
@@ -71,7 +71,7 @@ object EasterEgg {
         return try {
             val f = File(context.filesDir, name)
             if (!f.exists()) return null
-            BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap()
+            ImageDecode.fromFile(f.absolutePath)?.asImageBitmap()
         } catch (t: Throwable) {
             null
         }

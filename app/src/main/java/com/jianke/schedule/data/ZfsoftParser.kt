@@ -11,8 +11,9 @@ import org.json.JSONObject
  */
 object ZfsoftParser {
 
-    /** 从任意一段 JSON 文本里提取课程列表；解析不出来返回 null。 */
     /**
+     * 从任意一段 JSON 文本里提取课程列表；解析不出来返回 null。
+     *
      * @param bigPeriodMode 接口里的 jcs 如果用的是「大节」编号（1~5），
      *        需要换算成小节（第 n 大节 = 第 2n-1 ~ 2n 小节）。
      */

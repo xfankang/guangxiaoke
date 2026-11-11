@@ -1,9 +1,8 @@
 package com.jianke.schedule.data
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.AtomicFile
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
@@ -17,7 +16,6 @@ object Wallpaper {
     private const val FILE_NAME = "wallpaper.img"
     private const val BACKUP_NAME = "wallpaper.bak"
     private const val TEMP_NAME = "wallpaper.tmp"
-    private const val MAX_EDGE = 1600
 
     fun file(context: Context): File = File(context.filesDir, FILE_NAME)
 
@@ -41,7 +39,7 @@ object Wallpaper {
             val backup = backupFile(context)
             val current = file(context)
             if (backup.exists()) {
-                backup.copyTo(current, overwrite = true)
+                writeAtomically(current, backup)
                 backup.delete()
             } else {
                 current.delete()
@@ -63,11 +61,12 @@ object Wallpaper {
             val input = context.contentResolver.openInputStream(uri) ?: return false
             input.use { ins -> temp.outputStream().use { outs -> ins.copyTo(outs) } }
             // 解码成功后立即回收校验用 Bitmap，真正的界面图片仍由 load() 按需加载。
-            decodeScaled(temp.absolutePath)?.recycle() ?: return false
+            ImageDecode.fromFile(temp.absolutePath)?.recycle() ?: return false
 
             backupReady = backup(context)
             if (!backupReady) return false
-            temp.copyTo(file(context), overwrite = true)
+            // 正式文件走原子替换：写入中途被杀也不会留下半张图，旧图还在备份里。
+            writeAtomically(file(context), temp)
             true
         } catch (e: Exception) {
             if (backupReady) restoreBackup(context)
@@ -81,39 +80,29 @@ object Wallpaper {
         val f = file(context)
         if (!f.exists()) return null
         return try {
-            decodeScaled(f.absolutePath)?.asImageBitmap()
+            ImageDecode.fromFile(f.absolutePath)?.asImageBitmap()
         } catch (e: Exception) {
             null
         }
     }
 
     fun clear(context: Context) {
-        file(context).delete()
-        backupFile(context).delete()
+        AtomicFile(file(context)).delete()
+        AtomicFile(backupFile(context)).delete()
         tempFile(context).delete()
     }
 
-    /** 先量尺寸再按需降采样，避免大图直接把内存吃爆。 */
-    private fun decodeScaled(path: String): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        var sample = 1
-        var edge = maxOf(bounds.outWidth, bounds.outHeight)
-        while (edge / sample > MAX_EDGE * 2) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        var bitmap = BitmapFactory.decodeFile(path, opts) ?: return null
-        edge = maxOf(bitmap.width, bitmap.height)
-        if (edge > MAX_EDGE) {
-            val scale = MAX_EDGE.toFloat() / edge
-            val scaled = Bitmap.createScaledBitmap(
-                bitmap,
-                (bitmap.width * scale).toInt().coerceAtLeast(1),
-                (bitmap.height * scale).toInt().coerceAtLeast(1),
-                true,
-            )
-            if (scaled != bitmap) bitmap.recycle()
-            bitmap = scaled
+    /** 先写临时文件再替换正式文件，避免中途失败留下半份图片。 */
+    private fun writeAtomically(target: File, source: File) {
+        val atomic = AtomicFile(target)
+        val stream = atomic.startWrite()
+        try {
+            source.inputStream().use { it.copyTo(stream) }
+            stream.flush()
+            atomic.finishWrite(stream)
+        } catch (e: Exception) {
+            atomic.failWrite(stream)
+            throw e
         }
-        return bitmap
     }
 }
