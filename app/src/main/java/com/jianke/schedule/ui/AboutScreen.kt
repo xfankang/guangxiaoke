@@ -47,6 +47,7 @@ private val CREDITS = listOf(
     "DeepSeek Harness" to "开发与调试环境",
     "ChatGPT" to "开发与调试环境",
     "Kimi" to "开发与调试环境",
+    "GLM" to "开发与调试环境",
     "YuKongA" to "Miuix 界面组件库",
     "薪音" to "测试人员",
     "curian" to "测试人员",
