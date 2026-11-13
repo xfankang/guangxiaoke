@@ -485,53 +485,45 @@ private fun LegacyLayout(
         containerColor = if (wallpaper != null) Color.Transparent
         else MiuixTheme.colorScheme.surface,
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(
-                        bottom = if (dock) navInset + DOCK_RESERVED_HEIGHT else 0.dp,
-                    ),
-            ) {
-                // 切页给一点淡入 + 轻微上移，避免三个页面生硬地瞬间对调
-                AnimatedContent(
-                    targetState = tab,
-                    transitionSpec = {
-                        (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 26 })
-                            .togetherWith(
-                                fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it / 26 },
-                            )
-                    },
-                    label = "tab",
-                ) { target ->
-                    // 经典模式下 Dock 的预留高度合并进内容内边距，交给各屏幕自己处理
-                    val contentPadding = barContentPadding(
-                        top = padding.calculateTopPadding(),
-                        bottom = padding.calculateBottomPadding() +
-                            (if (dock) DOCK_RESERVED_HEIGHT else 0.dp),
-                    )
-                    when (target) {
-                        0 -> HomeScreen(schedule, contentPadding, onImport)
-
-                        1 -> SettingsScreen(
-                            contentPadding = contentPadding,
-                            darkOverride = darkOverride,
-                            onDarkOverrideChange = onDarkOverrideChange,
-                            dock = dock,
-                            onDockChange = onDockChange,
-                            glass = false,
-                            onGlassChange = onGlassChange,
-                            hasWallpaper = wallpaper != null,
-                            onWallpaperChanged = onWallpaperChanged,
-                            onWallpaperTransform = onWallpaperTransform,
+        // 内边距统一由 contentPadding 交给各屏幕让开一次（与 GlassLayout 同一口径）：
+        // 这里不能再套 padding(padding) / Dock 预留 —— 会和各屏幕的 contentPadding
+        // 叠加成两倍（设置页标题下死区、关于页卡片压扁、内容挤出屏幕）。
+        // FloatingDock 自己用 align + padding 定位，不依赖外层内边距。
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 切页给一点淡入 + 轻微上移，避免三个页面生硬地瞬间对调
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 26 })
+                        .togetherWith(
+                            fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it / 26 },
                         )
+                },
+                label = "tab",
+            ) { target ->
+                // 经典模式下 Dock 的预留高度合并进内容内边距，交给各屏幕自己处理
+                val contentPadding = barContentPadding(
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding() +
+                        (if (dock) DOCK_RESERVED_HEIGHT else 0.dp),
+                )
+                when (target) {
+                    0 -> HomeScreen(schedule, contentPadding, onImport)
 
-                        else -> AboutScreen(contentPadding)
-                    }
+                    1 -> SettingsScreen(
+                        contentPadding = contentPadding,
+                        darkOverride = darkOverride,
+                        onDarkOverrideChange = onDarkOverrideChange,
+                        dock = dock,
+                        onDockChange = onDockChange,
+                        glass = false,
+                        onGlassChange = onGlassChange,
+                        hasWallpaper = wallpaper != null,
+                        onWallpaperChanged = onWallpaperChanged,
+                        onWallpaperTransform = onWallpaperTransform,
+                    )
+
+                    else -> AboutScreen(contentPadding)
                 }
             }
 
