@@ -1,6 +1,7 @@
 package com.jianke.schedule.data
 
 import org.json.JSONArray
+import java.util.Locale
 
 /**
  * 直连接口数据校验。
@@ -26,9 +27,13 @@ object ApiValidator {
      */
     fun currentWeekOf(bodyText: String): Int = WeekParser.currentWeekOf(bodyText)
 
-    /** 课程名归一化：忽略全半角括号、空格、标点差异。 */
+    /**
+     * 课程名归一化：忽略全半角括号、空格、标点差异。
+     * 大写必须用 Locale.ROOT：默认 locale 下（如土耳其语）「i」会变成「İ」，
+     * 而页面 JS 的 toUpperCase() 不区分 locale，两边会对不上。
+     */
     fun normName(s: String): String =
-        s.replace(Regex("[\\s()（）\\[\\]【】·、,，.。\\-—_/\\\\]"), "").uppercase()
+        s.replace(Regex("[\\s()（）\\[\\]【】·、,，.。\\-—_/\\\\]"), "").uppercase(Locale.ROOT)
 
     fun keyOf(c: Course): String =
         normName(c.name) + "|" + c.dayOfWeek + "|" + c.startPeriod + "|" + c.endPeriod

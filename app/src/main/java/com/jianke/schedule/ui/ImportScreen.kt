@@ -74,11 +74,16 @@ private class ScanState {
 }
 
 /**
- * 导入课表：登录统一身份认证后，打开手机版课表页，
- * 把页面上**渲染出来的**课表逐周读下来（页内循环优先，被整页刷新打断就退回 App 侧驱动）。
+ * 导入课表：登录统一身份认证后，打开手机版课表页。
  *
- * 说明：之前试过直连桌面版 JSON 接口（kbList），但那份数据和手机版页面对不上，
- * 所以已经去掉，只保留验证过正确的页面解析方式。
+ * 三条路按顺序尝试，任何一条通过就用它的结果：
+ *   1. 直连接口（PHASE_API）：页内探测 kbList 接口，拿到数据后与页面渲染结果
+ *      **双向比对**（ApiValidator），完全对得上才采信，1~2 秒完成
+ *   2. 页内整学期扫描（PHASE_FAST）：注入脚本自己翻周，一次往返合并整学期
+ *   3. App 侧逐周驱动（PHASE_SLOW）：页内循环被整页刷新打断时，由 App 一周一周抓
+ *
+ * 接口这条路曾经「看起来能用但课表全乱」，所以不再「拿到 kbList 就当成功」；
+ * 页面渲染出来的课表始终是唯一可信的基准。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -253,13 +258,23 @@ fun ImportScreen(
         if (week in 1..MAX_WEEKS) {
             if (week == scan.lastWeek) scan.stale++ else scan.stale = 0
             scan.lastWeek = week
-            if (!scan.byWeek.containsKey(week)) scan.byWeek[week] = grid ?: emptyList()
+            // 空的周允许被非空结果升级：页面还没渲染完就抓到的那一周会被记成空，
+            // 如果不许覆盖，回扫再经过也不补，这一周会永远缺课。
+            // 真正没课的周（grid 为 null 或空）保持空，不会被同周重复抓取覆盖。
+            val existing = scan.byWeek[week]
+            if (existing.isNullOrEmpty() && !grid.isNullOrEmpty()) {
+                scan.byWeek[week] = grid
+            } else if (existing == null) {
+                scan.byWeek[week] = emptyList()
+            }
         } else if (grid == null) {
             scan.stale++
         }
         scan.iterations++
         if (scan.byWeek.isNotEmpty()) {
-            status = "已读取 " + scan.byWeek.size + " 周（第 " + week + " 周）…"
+            // 周次读不出来时显示「第 ? 周」，别把内部的 0 直接露给用户。
+            val weekLabel = if (week in 1..MAX_WEEKS) week.toString() else "?"
+            status = "已读取 " + scan.byWeek.size + " 周（第 " + weekLabel + " 周）…"
         }
         val stuck = scan.stale >= 2
         val reachedStart = scan.backward && week in 1..2

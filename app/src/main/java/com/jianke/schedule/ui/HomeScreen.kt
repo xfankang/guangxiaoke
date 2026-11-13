@@ -55,6 +55,7 @@ import com.jianke.schedule.data.Schedule
 import com.jianke.schedule.data.layoutDay
 import com.jianke.schedule.data.schoolBigPeriods
 import com.jianke.schedule.data.schoolLessonTimes
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
@@ -772,7 +773,15 @@ private fun TodayTimeline(schedule: Schedule, week: Int, modifier: Modifier = Mo
     val todayCourses = schedule.coursesOfWeek(week)
         .filter { it.dayOfWeek == today.dayOfWeek.value }
         .sortedBy { it.startPeriod }
-    val now = LocalTime.now()
+    // 停在今日课程页时状态也要走：原来取的是「组合那一刻」的时间，
+    // 一节课上完胶囊还挂着「进行中」。每半分钟刷一次足够。
+    var now by remember { mutableStateOf(LocalTime.now()) }
+    LaunchedEffect(todayCourses) {
+        while (true) {
+            delay(30_000)
+            now = LocalTime.now()
+        }
+    }
 
     Column(
         modifier = modifier

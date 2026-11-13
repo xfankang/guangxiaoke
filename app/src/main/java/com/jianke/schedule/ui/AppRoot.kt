@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +35,8 @@ import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.ScheduleStore
 import com.jianke.schedule.data.Wallpaper
 import com.jianke.schedule.ui.theme.AppTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
@@ -81,7 +85,15 @@ fun AppRoot() {
     var dock by remember { mutableStateOf(Prefs.dockEnabled(context)) }
     // 悬浮 Dock 自己控制位置：贴着系统导航栏上方 6dp。
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    var wallpaper by remember { mutableStateOf(runCatching { Wallpaper.load(context) }.getOrNull()) }
+    // 壁纸解码放在后台线程：启动、换壁纸后各解码一次，版本号变了就重新加载。
+    // 原来在组合期间同步解码大图，低端机上冷启动和换壁纸都会卡一下。
+    var wallpaperVersion by remember { mutableIntStateOf(0) }
+    var wallpaper by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(wallpaperVersion) {
+        wallpaper = withContext(Dispatchers.IO) {
+            runCatching { Wallpaper.load(context) }.getOrNull()
+        }
+    }
 
 
     if (importing) {
@@ -203,9 +215,7 @@ fun AppRoot() {
                                             Prefs.setDockEnabled(context, value)
                                         },
                                         hasWallpaper = wallpaper != null,
-                                        onWallpaperChanged = {
-                                            wallpaper = runCatching { Wallpaper.load(context) }.getOrNull()
-                                        },
+                                        onWallpaperChanged = { wallpaperVersion++ },
                                         onWallpaperTransform = { s, dx, dy ->
                                             wpScale = s
                                             wpOffsetX = dx

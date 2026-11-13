@@ -48,7 +48,7 @@ object MobileDomParser {
                         room = lines.drop(1).firstOrNull().orEmpty(),
                         dayOfWeek = j + 1,
                         startPeriod = start,
-                        endPeriod = start + span - 1,
+                        endPeriod = (start + span - 1).coerceAtMost(MAX_PERIOD),
                         weeks = emptyList(),
                         weeksText = "",
                         color = parseColor(cell.optString("col")),
@@ -93,7 +93,7 @@ object MobileDomParser {
                     room = lines.drop(1).firstOrNull().orEmpty(),
                     dayOfWeek = c.optInt("d") + 1,
                     startPeriod = start,
-                    endPeriod = start + span - 1,
+                    endPeriod = (start + span - 1).coerceAtMost(MAX_PERIOD),
                     weeks = emptyList(),
                     weeksText = "",
                     color = parseColor(c.optString("col")),
@@ -137,7 +137,14 @@ object MobileDomParser {
             if (name.length < 2) continue
             val weeks = ArrayList<Int>()
             val w = o.optJSONArray("w")
-            if (w != null) for (j in 0 until w.length()) weeks.add(w.optInt(j))
+            if (w != null) {
+                for (j in 0 until w.length()) {
+                    val week = w.optInt(j)
+                    // 脏周次（JS 侧漏网的「第99周」之类）不能进 Course.weeks，
+                    // 否则会被 ScheduleBuilder 撑进学期总周数，课表多出一堆空周。
+                    if (week in 1..30) weeks.add(week)
+                }
+            }
             val start = o.optInt("p", 1).takeIf { it in 1..15 } ?: continue
             val span = periodSpanOf(o.optDouble("h", 0.0), unit, perRow)
             out.add(
@@ -147,8 +154,9 @@ object MobileDomParser {
                     room = o.optString("r"),
                     dayOfWeek = o.optInt("d", 1).coerceIn(1, 7),
                     startPeriod = start,
-                    endPeriod = start + span - 1,
-                    weeks = weeks.sorted(),
+                    endPeriod = (start + span - 1).coerceAtMost(MAX_PERIOD),
+                    // 与存储层 decode 的 distinct 行为对齐，保证内存态与落盘态一致
+                    weeks = weeks.distinct().sorted(),
                     weeksText = "",
                     color = parseColor(o.optString("col")),
                 ),
@@ -257,6 +265,13 @@ object MobileDomParser {
     }
 
     private const val DEFAULT_UNIT = 50.0
+
+    /**
+     * 结束节次的统一上限，与存储层（ScheduleCodec 按 1~20 校验）保持一致。
+     * 格子高度换算最坏能算出 start≤15 + span≤24 = 38 节，不夹住的话
+     * 落盘再回读时这门课会被存储层静默拒收——重启后课程就消失了。
+     */
+    private const val MAX_PERIOD = 20
 
     /** "rgb(231, 108, 108)" -> 0xFFE76C6C；非法颜色不进入位运算。 */
     fun parseColor(text: String): Int {

@@ -16,12 +16,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.Wallpaper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
@@ -47,6 +51,7 @@ fun SettingsScreen(
     onWallpaperTransform: (Float, Float, Float) -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var hint by remember { mutableStateOf("") }
     var showEgg by remember { mutableStateOf(false) }
     // 正在调整构图的那张图（选完图 / 点「调整位置」时打开）
@@ -75,20 +80,26 @@ fun SettingsScreen(
         prevScale = Prefs.wallpaperScale(context)
         prevFracX = t.first
         prevFracY = t.second
-        // save() 内部会先给旧图留一份底
-        val ok = Wallpaper.save(context, uri)
-        if (ok) {
-            onWallpaperChanged()
-            // 换新图先把构图归位，再让用户自己调
-            onWallpaperTransform(1f, 0f, 0f)
-            editScale = 1f
-            editFracX = 0f
-            editFracY = 0f
-            editing = runCatching { Wallpaper.load(context) }.getOrNull()
-            pendingPick = true
-            hint = "壁纸已应用，可以继续调整位置"
-        } else {
-            hint = "这张图片读取失败，换一张试试"
+        hint = "正在应用壁纸…"
+        // save() 要拷文件 + 试解码、load() 要解码大图，都放后台线程：
+        // 原来在主线程同步做，选到大图会把界面卡住好几秒。
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { Wallpaper.save(context, uri) }
+            if (ok) {
+                editing = withContext(Dispatchers.IO) {
+                    runCatching { Wallpaper.load(context) }.getOrNull()
+                }
+                onWallpaperChanged()
+                // 换新图先把构图归位，再让用户自己调
+                onWallpaperTransform(1f, 0f, 0f)
+                editScale = 1f
+                editFracX = 0f
+                editFracY = 0f
+                pendingPick = true
+                hint = "壁纸已应用，可以继续调整位置"
+            } else {
+                hint = "这张图片读取失败，换一张试试"
+            }
         }
     }
 
@@ -151,7 +162,11 @@ fun SettingsScreen(
                             editScale = Prefs.wallpaperScale(context)
                             editFracX = t.first
                             editFracY = t.second
-                            editing = runCatching { Wallpaper.load(context) }.getOrNull()
+                            scope.launch {
+                                editing = withContext(Dispatchers.IO) {
+                                    runCatching { Wallpaper.load(context) }.getOrNull()
+                                }
+                            }
                         },
                         modifier = Modifier.weight(1f),
                     )

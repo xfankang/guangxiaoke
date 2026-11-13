@@ -22,13 +22,14 @@ object ScheduleStore {
     fun load(context: Context): Schedule? {
         val f = file(context)
         if (!f.exists()) return null
+        val atomic = AtomicFile(f)
         return try {
-            val root = AtomicFile(f).openRead().bufferedReader().use { reader ->
+            val root = atomic.openRead().bufferedReader().use { reader ->
                 JSONObject(reader.readText())
             }
             // 早期接口导入的数据不作页面课表使用，保持原有的一次性迁移行为。
             if (root.optString("source") != ScheduleCodec.SOURCE_SCAN) {
-                AtomicFile(f).delete()
+                atomic.delete()
                 null
             } else {
                 ScheduleCodec.decode(root)

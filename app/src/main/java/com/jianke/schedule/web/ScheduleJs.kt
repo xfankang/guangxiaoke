@@ -42,9 +42,23 @@ object ScheduleJs {
     var m = /background-color:\s*(rgb\([^)]*\))/.exec(style || '');
     return m ? m[1] : '';
   }
+  // 与 Kotlin 侧 data/WeekParser 同口径：优先认表头「第N周 2026-11-10/2026-11-16」，
+  // 没有表头才退回第一个 1~30 范围内的「第N周」（下拉框的文字可能排在表头前面，
+  // 而且可能翻出「第99周」这种怪值——裸取第一个匹配会把整学期的周次标签贴错）。
   function weekNo() {
-    var m = /第\s*([0-9]{1,2})\s*周/.exec(document.body ? (document.body.innerText || '') : '');
-    return m ? parseInt(m[1], 10) : 0;
+    var body = document.body ? (document.body.innerText || '') : '';
+    var mh = /第\s*([0-9]{1,2})\s*周\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/.exec(body);
+    if (mh) {
+      var wh = parseInt(mh[1], 10);
+      if (wh >= 1 && wh <= 30) { return wh; }
+    }
+    var re = /第\s*([0-9]{1,2})\s*周/g;
+    var m;
+    while ((m = re.exec(body))) {
+      var w = parseInt(m[1], 10);
+      if (w >= 1 && w <= 30) { return w; }
+    }
+    return 0;
   }
   function grab() {
     var content = document.querySelector('.Courses-content');
@@ -136,16 +150,20 @@ object ScheduleJs {
   var guard = 0;
   var body0 = (document.body ? (document.body.innerText || '') : '').slice(0, 3000);
   function record() {
+    // 只有「已经拿到过非空数据」的周才算记录过。空数组在 JS 里是真值，
+    // 若首屏还没渲染完就注入脚本，当前周会被记成空——往后翻再回来时必须允许重录，
+    // 否则这一周会在最终合并里永远缺课。
     var w = weekNo();
-    if (!w || byWeek[w]) { return w; }
+    if (!w || (byWeek[w] && byWeek[w].length)) { return w; }
     var cells = grab();
     if (cells && cells.length > 0) {
       byWeek[w] = cells;
-      weekList.push(w);
+      // 空周重录后 w 可能已经在 weekList 里，去重避免最终结果里同一周出现两次
+      if (weekList.indexOf(w) < 0) { weekList.push(w); }
       report('progress:' + w);
     } else {
       byWeek[w] = [];
-      weekList.push(w);
+      if (weekList.indexOf(w) < 0) { weekList.push(w); }
     }
     return w;
   }

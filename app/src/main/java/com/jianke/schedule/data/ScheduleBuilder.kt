@@ -2,10 +2,8 @@ package com.jianke.schedule.data
 
 import java.time.LocalDate
 
-/** 把抓到的课程整理成一份课表：反推学期开始日期、取页面上的真实作息时间。 */
+/** 把抓到的课程整理成一份课表：反推学期开始日期，作息时间用学校统一的那套。 */
 object ScheduleBuilder {
-
-    private val PERIOD_TIME_REGEX = Regex("([0-9]{1,2})\\s*\\n\\s*([0-9]{2}:[0-9]{2})")
 
     fun build(
         bodyText: String,
@@ -33,17 +31,6 @@ object ScheduleBuilder {
             courses = courses,
             updatedAt = System.currentTimeMillis(),
         )
-    }
-
-    /** 页面底部藏着作息表："1 08:20 2 09:10 3 10:20 …" */
-    fun parsePeriodTimes(bodyText: String): List<PeriodTime> {
-        val map = LinkedHashMap<Int, String>()
-        for (m in PERIOD_TIME_REGEX.findAll(bodyText)) {
-            val idx = m.groupValues[1].toIntOrNull() ?: continue
-            if (idx in 1..15 && !map.containsKey(idx)) map[idx] = m.groupValues[2]
-        }
-        if (map.size < 4) return defaultPeriodTimes
-        return map.entries.sortedBy { it.key }.map { PeriodTime(it.key, it.value, "") }
     }
 
     private fun startDateOf(dateText: String?, week: Int?): String {
