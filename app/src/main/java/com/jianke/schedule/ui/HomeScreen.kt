@@ -58,8 +58,6 @@ import com.jianke.schedule.data.schoolLessonTimes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -92,7 +90,7 @@ const val UPDATE_WARNING = "由于无法实现实时更新课表，为了防止�
     "建议同学们一周至少更新一次课表，保持课表的准确性！！！"
 
 @Composable
-fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
+fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () -> Unit) {
     var tab by remember { mutableIntStateOf(MODE_WEEK) }
     val totalWeeks = (schedule?.semester?.totalWeeks ?: 1).coerceAtLeast(1)
     val currentWeek = remember(schedule) { schedule?.let { currentWeekOf(it) } ?: 1 }
@@ -110,9 +108,14 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
     var anchorRect by remember { mutableStateOf<Rect?>(null) }
     var lastDismissAt by remember { mutableStateOf(0L) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // 顶部让开玻璃顶栏；周视图的格子仍与玻璃保持间距（可读性优先）
+            .padding(top = contentPadding.calculateTopPadding()),
+    ) {
         if (schedule == null) {
-            EmptyState(onImport = onImport)
+            EmptyState(onImport = onImport, contentPadding = contentPadding)
         } else {
             ModeTabs(tab = tab, onTabChange = { tab = it })
             StaleHint(updatedAt = schedule.updatedAt, onImport = onImport)
@@ -149,7 +152,9 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
                     state = pagerState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(1f)
+                        // 周视图格子不让它钻进 Dock 底下（课不被玻璃压住）
+                        .padding(bottom = contentPadding.calculateBottomPadding()),
                 ) { page ->
                     WeekGrid(
                         courses = schedule.coursesOfWeek(page + 1),
@@ -178,12 +183,14 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
                 TodayTimeline(
                     schedule = schedule,
                     week = currentWeek,
+                    bottomPad = contentPadding.calculateBottomPadding(),
                     modifier = Modifier.weight(1f),
                 )
             } else {
                 UpdatePage(
                     updatedAt = schedule.updatedAt,
                     onImport = onImport,
+                    bottomPad = contentPadding.calculateBottomPadding(),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -203,7 +210,13 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
             // 不会「穿透」到底下的课程格子又把它点开。
             properties = PopupProperties(focusable = true),
         ) {
-            CourseDetailCard(course = course)
+            GlassCard(
+                modifier = Modifier.width(266.dp),
+                cornerRadius = 18.dp,
+                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
+            ) {
+                CourseDetailCard(course = course)
+            }
         }
     }
 }
@@ -212,7 +225,12 @@ fun HomeScreen(schedule: Schedule?, onImport: () -> Unit) {
  * 「更新课表」页：显示上次更新时间 + 一键更新 + 红字提醒。
  */
 @Composable
-private fun UpdatePage(updatedAt: Long, onImport: () -> Unit, modifier: Modifier = Modifier) {
+private fun UpdatePage(
+    updatedAt: Long,
+    onImport: () -> Unit,
+    bottomPad: Dp,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -245,6 +263,7 @@ private fun UpdatePage(updatedAt: Long, onImport: () -> Unit, modifier: Modifier
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .glassLayer(RoundedCornerShape(Ui.CardCorner))
                 .clip(RoundedCornerShape(Ui.CardCorner))
                 .background(Color(0xFFE53935).copy(alpha = 0.14f))
                 .padding(16.dp),
@@ -255,7 +274,8 @@ private fun UpdatePage(updatedAt: Long, onImport: () -> Unit, modifier: Modifier
                 color = Color(0xFFE53935),
             )
         }
-        Spacer(Modifier.height(28.dp))
+        // 滚动内容末尾留出玻璃 Dock 的高度：卡片滚动时从玻璃下面穿过
+        Spacer(Modifier.height(bottomPad + 28.dp))
     }
 }
 
@@ -478,6 +498,7 @@ private fun StaleHint(updatedAt: Long, onImport: () -> Unit) {
             .padding(horizontal = Ui.Page)
             .padding(bottom = 8.dp)
             .clip(RoundedCornerShape(Ui.CardCorner))
+            .glassLayer(RoundedCornerShape(Ui.CardCorner))
             .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f))
             .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -712,11 +733,7 @@ private class CoursePopupPositionProvider(private val anchor: Rect) : PopupPosit
 @Composable
 private fun CourseDetailCard(course: Course) {
     val accent = courseAccent(course.color)
-    Card(
-        modifier = Modifier.width(266.dp),
-        cornerRadius = 18.dp,
-        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
-    ) {
+    Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -768,7 +785,12 @@ private const val STATUS_TODO = 2
  * 梗缩小成已完成课程下面的一行小字，只在上完课之后出现。
  */
 @Composable
-private fun TodayTimeline(schedule: Schedule, week: Int, modifier: Modifier = Modifier) {
+private fun TodayTimeline(
+    schedule: Schedule,
+    week: Int,
+    bottomPad: Dp,
+    modifier: Modifier = Modifier,
+) {
     val today = LocalDate.now()
     val todayCourses = schedule.coursesOfWeek(week)
         .filter { it.dayOfWeek == today.dayOfWeek.value }
@@ -885,7 +907,8 @@ private fun TodayTimeline(schedule: Schedule, week: Int, modifier: Modifier = Mo
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
+        // 末尾留出玻璃 Dock 的高度：课程卡滚动时从玻璃下面穿过
+        Spacer(Modifier.height(bottomPad + 20.dp))
     }
 }
 
@@ -934,14 +957,12 @@ private fun TodayCourseRow(
                 ),
         )
         Spacer(Modifier.width(12.dp))
-        Card(
+        GlassCard(
             modifier = Modifier.weight(1f),
             cornerRadius = 14.dp,
             insideMargin = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-            colors = CardDefaults.defaultColors(
-                color = cardFill,
-                contentColor = ink.primary,
-            ),
+            container = cardFill,
+            contentColor = ink.primary,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1004,10 +1025,11 @@ private fun TodayCourseRow(
 }
 
 @Composable
-private fun EmptyState(onImport: () -> Unit) {
+private fun EmptyState(onImport: () -> Unit, contentPadding: PaddingValues) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding())
             .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,

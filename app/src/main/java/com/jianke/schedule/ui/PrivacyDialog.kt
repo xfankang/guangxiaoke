@@ -13,7 +13,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -26,7 +25,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun PrivacyDialog(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp),

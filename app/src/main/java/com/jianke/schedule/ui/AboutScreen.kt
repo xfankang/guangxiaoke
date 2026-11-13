@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jianke.schedule.BuildConfig
 import com.jianke.schedule.R
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -70,15 +69,20 @@ private const val STRETCH_MAX_FONT_SCALE = 1.35f
  * 强行等分会把分隔线压到字上；这时回退成自然高度 + 允许滚动，宁可滑也不能压字或丢内容。
  */
 @Composable
-fun AboutScreen() {
+fun AboutScreen(contentPadding: PaddingValues) {
     val stretch = LocalDensity.current.fontScale <= STRETCH_MAX_FONT_SCALE
+    val topPad = contentPadding.calculateTopPadding()
+    val bottomPad = contentPadding.calculateBottomPadding()
 
+    // 固定一屏时整体让开玻璃顶栏 / 底栏；可滚动时让卡片从玻璃下面穿过
     val modifier = Modifier
         .fillMaxSize()
+        .then(if (stretch) Modifier.padding(top = topPad, bottom = bottomPad) else Modifier)
         .then(if (stretch) Modifier else Modifier.verticalScroll(rememberScrollState()))
         .padding(horizontal = Ui.Page)
 
     Column(modifier = modifier) {
+        if (!stretch) Spacer(Modifier.height(topPad))
         AppInfoCard()
 
         SectionTitle("作者")
@@ -105,13 +109,14 @@ fun AboutScreen() {
                 .fillMaxWidth()
                 .padding(vertical = if (stretch) 10.dp else 20.dp),
         )
+        if (!stretch) Spacer(Modifier.height(bottomPad))
     }
 }
 
 /** 顶部应用信息卡：图标、名称、版本，以及那句红字提醒。 */
 @Composable
 private fun AppInfoCard() {
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 2.dp),
@@ -163,7 +168,7 @@ private fun StretchCreditCard(
     items: List<Pair<String, String>>,
     modifier: Modifier = Modifier,
 ) {
-    Card(
+    GlassCard(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = Ui.CardCorner,
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -187,7 +192,7 @@ private fun StretchCreditCard(
 /** 自然高度卡片：大字号时用，行按自身内容排版，整页可滚动。 */
 @Composable
 private fun NaturalCreditCard(items: List<Pair<String, String>>) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = Ui.CardCorner,
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),

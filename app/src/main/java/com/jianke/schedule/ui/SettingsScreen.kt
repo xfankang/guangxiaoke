@@ -26,7 +26,6 @@ import com.jianke.schedule.data.Wallpaper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
@@ -42,10 +41,13 @@ private val DARK_TABS = listOf("跟随系统", "浅色", "深色")
 
 @Composable
 fun SettingsScreen(
+    contentPadding: PaddingValues,
     darkOverride: Boolean?,
     onDarkOverrideChange: (Boolean?) -> Unit,
     dock: Boolean,
     onDockChange: (Boolean) -> Unit,
+    glass: Boolean,
+    onGlassChange: (Boolean) -> Unit,
     hasWallpaper: Boolean,
     onWallpaperChanged: () -> Unit,
     onWallpaperTransform: (Float, Float, Float) -> Unit,
@@ -108,7 +110,8 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        Spacer(Modifier.height(4.dp))
+        // 内容从玻璃顶栏下面开始（滚动时卡片从玻璃下穿过），首尾留出玻璃层的高度
+        Spacer(Modifier.height(contentPadding.calculateTopPadding()))
 
         SectionHeader("外观")
         SettingsCard {
@@ -138,6 +141,16 @@ fun SettingsScreen(
                 },
             )
             Spacer(Modifier.height(6.dp))
+        }
+
+        // 液态玻璃总开关：毛玻璃染色 + 高光描边；Android 12+ 叠加内容穿底实时模糊
+        SettingsCard {
+            SettingRow(
+                icon = MiuixIcons.Background,
+                title = "液态玻璃",
+                summary = "毛玻璃与高光质感；Android 12+ 支持背景实时模糊",
+                trailing = { Switch(checked = glass, onCheckedChange = onGlassChange) },
+            )
         }
 
         SectionHeader("壁纸")
@@ -212,7 +225,8 @@ fun SettingsScreen(
                 onClick = { showEgg = true },
             )
         }
-        Spacer(Modifier.height(28.dp))
+        // 尾部留出玻璃底栏的高度：卡片滚动时从玻璃下面穿过
+        Spacer(Modifier.height(contentPadding.calculateBottomPadding() + 28.dp))
     }
 
     val bmp = editing
@@ -260,10 +274,10 @@ private fun SectionHeader(text: String) {
     )
 }
 
-/** 设置页统一用的卡片：同样的圆角、同样的左右边距、同样的行内边距。 */
+/** 设置页统一用的卡片：玻璃开关打开时为液态玻璃材质，关闭时为经典 Miuix 卡片。 */
 @Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Ui.Page)

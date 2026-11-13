@@ -29,7 +29,6 @@ import androidx.compose.ui.window.Dialog
 import com.jianke.schedule.data.EasterEgg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -53,7 +52,7 @@ fun EasterEggDialog(onDismiss: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        GlassCard(
             modifier = Modifier.fillMaxWidth(),
             cornerRadius = 20.dp,
             insideMargin = PaddingValues(16.dp),

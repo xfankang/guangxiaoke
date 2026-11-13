@@ -6,7 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -24,7 +26,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,6 +40,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -80,6 +91,27 @@ object Ui {
 
     /** 页面级压暗：壁纸再花也要保证正文可读。 */
     const val WallpaperDim = 0.30f
+
+    /** 玻璃顶栏 / 底栏与屏幕边缘的留白（悬浮胶囊样式）。 */
+    val GlassMargin = 14.dp
+
+    /** 玻璃顶栏高度。 */
+    val GlassBarHeight = 56.dp
+
+    /** 玻璃层的浮起阴影。 */
+    val GlassShadow = 10.dp
+
+    /** 玻璃层与内容的间距（顶栏下、Dock 上各留这么多，课程不被压住）。 */
+    val GlassGap = 10.dp
+
+    /** 玻璃染色透明度：壁纸模式背后是预模糊的壁纸，可以更透。 */
+    const val GlassTintWallpaper = 0.66f
+
+    /** 玻璃染色透明度：纯色背景 / 实时模糊模式。 */
+    const val GlassTintPlain = 0.60f
+
+    /** 玻璃卡片上自定义染色（课程色等）的透明度上限。 */
+    const val GlassCardFillAlpha = 0.62f
 }
 
 /** 课程识别色。学校没给颜色的课（0）退回主题色。 */
@@ -360,3 +392,134 @@ fun SegmentedTabs(
 
 /** 模块之间的间距。 */
 private val SEGMENT_GAP = 8.dp
+
+// ============================= 液态玻璃 =============================
+
+/**
+ * 玻璃层的染色。
+ *
+ * - 壁纸模式：背后本来就是预模糊的壁纸，染色用主题表面色压一层，让壁纸透出来；
+ * - 纯色 / 实时模糊模式：玻璃要和背景「读」得开 —— 浅色主题叠白、深色主题叠淡白。
+ */
+@Composable
+fun glassTint(): Color {
+    val surface = MiuixTheme.colorScheme.surface
+    val dark = surface.luminance() < 0.5f
+    return if (LocalWallpaperActive.current) {
+        surface.copy(alpha = if (dark) Ui.GlassTintWallpaper - 0.06f else Ui.GlassTintWallpaper)
+    } else {
+        if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = Ui.GlassTintPlain)
+    }
+}
+
+/**
+ * 玻璃边缘的高光描边：顶部最亮（光从上方来）、中部淡出、底部一圈微亮，
+ * 模拟玻璃边缘的反光。1dp 就够，宽了像塑料。
+ */
+fun specularBrush(): Brush = Brush.verticalGradient(
+    listOf(
+        Color.White.copy(alpha = 0.42f),
+        Color.White.copy(alpha = 0.10f),
+        Color.White.copy(alpha = 0.24f),
+    ),
+)
+
+/**
+ * 液态玻璃层：浮起阴影 + 半透明染色 + 高光描边。
+ *
+ * 玻璃总开关关闭时原样返回（经典平面样式）。实时背景模糊走 [glassBar]，
+ * 卡片用 [GlassCard] —— 玻璃卡片和内容同层，不做背景模糊，只做染色 + 高光，
+ * 60fps 不受影响。
+ */
+@Composable
+fun Modifier.glassLayer(shape: Shape): Modifier {
+    val glass = LocalGlass.current
+    if (!glass.enabled) return this
+    return this
+        .shadow(elevation = Ui.GlassShadow, shape = shape, clip = false)
+        .clip(shape)
+        .background(glassTint(), shape)
+        .border(width = 1.dp, brush = specularBrush(), shape = shape)
+}
+
+/**
+ * 顶栏 / 底栏的玻璃条：在 [glassLayer] 的基础上，Android 12+ 且玻璃开关打开时
+ * 挂 Haze 做背景实时模糊（课表内容从玻璃下面穿过时的那层毛玻璃）。
+ * Android 11 / 关闭实时模糊时退回半透明染色 —— 壁纸模式背后本来就是预模糊的壁纸，
+ * 观感几乎不打折。
+ */
+@Composable
+fun Modifier.glassBar(hazeState: HazeState?, shape: Shape): Modifier {
+    val glass = LocalGlass.current
+    if (!glass.enabled) return this
+    var m = this
+        .shadow(elevation = Ui.GlassShadow, shape = shape, clip = false)
+        .clip(shape)
+    val tint = glassTint()
+    if (glass.realBlur && hazeState != null) {
+        m = m.hazeEffect(
+            state = hazeState,
+            style = HazeStyle(
+                backgroundColor = Color.Transparent,
+                tints = listOf(HazeTint(tint)),
+                blurRadius = 22.dp,
+                noiseFactor = 0.12f,
+                fallbackTint = HazeTint(tint),
+            ),
+        )
+    } else {
+        m = m.background(tint, shape)
+    }
+    return m.border(width = 1.dp, brush = specularBrush(), shape = shape)
+}
+
+/**
+ * 玻璃卡片：玻璃开关打开时用液态玻璃层（半透明染色 + 高光 + 浮起阴影），
+ * 关闭时完全回退成 Miuix Card 的经典平面样式。
+ *
+ * 内容作用域与 Miuix Card 一致是 [ColumnScope]（子项竖排）——
+ * 用 Box 的话多行卡片会把所有子项叠在同一处。
+ *
+ * @param container 自定义染色（课程色等）；玻璃模式会压到 [Ui.GlassCardFillAlpha]，
+ *   经典模式原样传给 Miuix Card
+ */
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = Ui.CardCorner,
+    insideMargin: PaddingValues = PaddingValues(16.dp),
+    container: Color? = null,
+    contentColor: Color? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val glass = LocalGlass.current
+    if (!glass.enabled) {
+        if (container != null) {
+            Card(
+                modifier = modifier,
+                cornerRadius = cornerRadius,
+                insideMargin = insideMargin,
+                colors = CardDefaults.defaultColors(
+                    color = container,
+                    contentColor = contentColor ?: Color.White,
+                ),
+            ) { content() }
+        } else {
+            Card(modifier = modifier, cornerRadius = cornerRadius, insideMargin = insideMargin) {
+                content()
+            }
+        }
+        return
+    }
+    val shape = RoundedCornerShape(cornerRadius)
+    val fill = container?.copy(alpha = Ui.GlassCardFillAlpha) ?: glassTint()
+    Box(
+        modifier
+            .shadow(elevation = Ui.GlassShadow, shape = shape, clip = false)
+            .clip(shape)
+            .background(fill)
+            .border(width = 1.dp, brush = specularBrush(), shape = shape),
+    ) {
+        Column(modifier = Modifier.padding(insideMargin)) { content() }
+    }
+}

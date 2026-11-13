@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -49,6 +50,9 @@ private val DOCK_INNER_PADDING = 5.dp
  *
  * 原来 66dp 高的胶囊里只放了一个 26dp 图标、没有文字，看着又高又空；
  * 现在图标下面补上标签，选中态也加了描边，在浅色壁纸上不会糊掉。
+ *
+ * 液态玻璃开启时整条 Dock 换成玻璃材质（半透明染色 + 高光描边 +
+ * Android 12+ 背景实时模糊）；关闭时保持原来的实色。
  */
 @Composable
 fun FloatingDock(
@@ -56,23 +60,32 @@ fun FloatingDock(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    hazeState: HazeState? = null,
 ) {
     if (items.isEmpty()) return
     val shape = RoundedCornerShape(DOCK_HEIGHT / 2)
     val surface = MiuixTheme.colorScheme.surfaceContainer
+    val glassOn = LocalGlass.current.enabled
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .height(DOCK_HEIGHT)
-            .shadow(elevation = 10.dp, shape = shape, clip = false)
-            .clip(shape)
-            .background(
-                if (LocalWallpaperActive.current) surface.copy(alpha = Ui.Scrim) else surface,
-            )
-            .border(
-                width = 1.dp,
-                color = MiuixTheme.colorScheme.outline.copy(alpha = 0.10f),
-                shape = shape,
+            .then(
+                if (glassOn) {
+                    Modifier.glassBar(hazeState, shape)
+                } else {
+                    Modifier
+                        .shadow(elevation = 10.dp, shape = shape, clip = false)
+                        .clip(shape)
+                        .background(
+                            if (LocalWallpaperActive.current) surface.copy(alpha = Ui.Scrim) else surface,
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = MiuixTheme.colorScheme.outline.copy(alpha = 0.10f),
+                            shape = shape,
+                        )
+                },
             )
             .padding(DOCK_INNER_PADDING),
     ) {

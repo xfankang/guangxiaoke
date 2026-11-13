@@ -47,7 +47,6 @@ import com.jianke.schedule.web.ScheduleJs
 import com.jianke.schedule.web.SchoolEndpoints
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -382,7 +381,7 @@ fun ImportScreen(
                 .padding(padding),
         ) {
             if (importedCount > 0) {
-                Card(
+                GlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Ui.Page)
@@ -442,7 +441,7 @@ fun ImportScreen(
             }
             val apiNote = apiReport
             if (apiNote != null) {
-                Card(
+                GlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Ui.Page)
@@ -470,7 +469,7 @@ fun ImportScreen(
             }
             val failed = failure
             if (failed != null) {
-                Card(
+                GlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Ui.Page)

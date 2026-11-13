@@ -9,6 +9,7 @@ object Prefs {
     private const val KEY_DARK = "dark_override"
     private const val KEY_DOCK = "dock_enabled"
     private const val KEY_PRIVACY = "privacy_shown"
+    private const val KEY_GLASS = "glass_enabled"
     private const val KEY_WP_SCALE = "wallpaper_scale"
     private const val KEY_WP_X = "wallpaper_offset_x"
     private const val KEY_WP_Y = "wallpaper_offset_y"
@@ -46,6 +47,17 @@ object Prefs {
 
     fun setPrivacyShown(context: Context, value: Boolean) {
         sp(context).edit().putBoolean(KEY_PRIVACY, value).apply()
+    }
+
+    /**
+     * 液态玻璃外观（毛玻璃染色 + 高光描边；Android 12+ 叠加背景实时模糊）。
+     * 默认开启，设置页可随时关回经典平面样式。
+     */
+    fun glassEnabled(context: Context): Boolean =
+        sp(context).getBoolean(KEY_GLASS, true)
+
+    fun setGlassEnabled(context: Context, value: Boolean) {
+        sp(context).edit().putBoolean(KEY_GLASS, value).apply()
     }
 
     /** 壁纸的缩放与位移（用户自己调好的构图，切换页面/重启都要保持）。 */
