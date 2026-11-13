@@ -234,4 +234,64 @@ class ApiValidatorTest {
         val result = ApiValidator.validate(page, "第7周", api.toString())
         assertNull("起始节相同但结束节不同也必须拒绝", result.courses)
     }
+
+    /**
+     * 页面周次下拉框把 1..W 连续列全时，W 就是可靠的学期总周数。
+     * 接口却有课声称上到 W 之后 —— 本周比对仍然对得上，但周次解析八成错了，
+     * 必须在周数校验这一关拦下来。
+     */
+    @Test
+    fun rejectsWeeksBeyondSemesterRange() {
+        // 用 2025 年的日期：今天不在任何范围内，识别退回第一个匹配 = 第 1 周
+        val sb = StringBuilder("课表查询\n")
+        var monday = java.time.LocalDate.of(2025, 8, 25)
+        for (w in 1..16) {
+            sb.append("第").append(w).append("周 ").append(monday).append("/")
+                .append(monday.plusDays(6)).append('\n')
+            monday = monday.plusWeeks(1)
+        }
+        val body16 = sb.toString()
+
+        // 页面 16 门课 + 劳动教育，共 17 格
+        val cells = JSONArray(pageCells.toString())
+        cells.put(
+            JSONObject().put("t", "劳动教育\n教室").put("d", 0).put("p", 0)
+                .put("q", "1").put("h", 100).put("col", ""),
+        )
+        val here = listOf(
+            Triple("高等数学Ⅰ（上）", 1, "1-2"), Triple("大学英语Ⅰ", 3, "1-2"),
+            Triple("高等数学Ⅰ（上）", 5, "1-2"), Triple("电气工程概论", 1, "3-4"),
+            Triple("思想道德与法治", 2, "3-4"), Triple("高等数学Ⅰ（上）", 3, "3-4"),
+            Triple("大学英语Ⅰ", 4, "3-4"), Triple("机械CAD/CAM-Solidworks", 1, "5-6"),
+            Triple("体育Ⅰ（羽毛球）", 2, "5-6"), Triple("C语言程序设计", 1, "7-8"),
+            Triple("C语言程序设计", 2, "7-8"), Triple("机械CAD/CAM-Solidworks", 5, "7-8"),
+            Triple("职业生涯规划", 1, "9-10"), Triple("军事理论", 2, "9-10"),
+            Triple("思想道德与法治", 3, "9-10"), Triple("军事理论", 4, "9-10"),
+        )
+
+        // 全部课程都在 1..16 内：通过
+        val good = JSONArray()
+        here.forEach { (n, d, j) ->
+            good.put(
+                JSONObject().put("kcmc", n).put("xqj", d.toString()).put("jcs", j)
+                    .put("cdmc", "教室").put("zcd", "1-16周"),
+            )
+        }
+        good.put(
+            JSONObject().put("kcmc", "劳动教育").put("xqj", "1").put("jcs", "1-2")
+                .put("cdmc", "教室").put("zcd", "1-16周"),
+        )
+        val ok = ApiValidator.validate(cells, body16, JSONObject().put("kbList", good).toString())
+        assertNotNull("全部周次都在学期范围内应通过：" + ok.verdict, ok.courses)
+
+        // 劳动教育声称上到第 21 周：本周比对仍然对得上，学期周数校验必须拦下
+        val bad = JSONArray(good.toString())
+        bad.put(
+            JSONObject().put("kcmc", "劳动教育").put("xqj", "1").put("jcs", "1-2")
+                .put("cdmc", "教室").put("zcd", "1-16周,21周"),
+        )
+        val rejected = ApiValidator.validate(cells, body16, JSONObject().put("kbList", bad).toString())
+        assertNull("超出学期周数的接口必须拒绝", rejected.courses)
+        assertTrue(rejected.verdict.contains("学期范围"))
+    }
 }

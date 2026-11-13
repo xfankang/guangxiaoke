@@ -83,6 +83,20 @@ object ApiValidator {
                 "接口有 " + invalidWeeks.size + " 条记录没有可解析的周次，拒绝把未知周次当成每周都有",
             )
         }
+        // 页面下拉框把 1..W 连续列全时，W 就是可靠的学期总周数；
+        // 接口却有课声称上到 W 之后 —— 周次解析八成出了问题，宁可回退页面扫描。
+        val semesterWeeks = WeekParser.semesterWeekCount(bodyText)
+        if (semesterWeeks != null) {
+            val beyond = all.filter { c -> c.weeks.any { it > semesterWeeks } }
+            if (beyond.isNotEmpty()) {
+                val furthest = beyond.flatMap { it.weeks }.maxOrNull()
+                return Result(
+                    null,
+                    "页面周次下拉框列全了 1~" + semesterWeeks + " 周，接口却有 " + beyond.size +
+                        " 条记录上到第 " + furthest + " 周，超出学期范围，拒绝采信",
+                )
+            }
+        }
 
         val apiThisWeek = all.filter { it.isInWeek(currentWeek) }
         val pageKeys = pageCourses.map { keyOf(it) }.toSet()

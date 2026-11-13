@@ -113,6 +113,21 @@ class MobileDomParserTest {
         assertEquals(18, s.semester.totalWeeks)
     }
 
+    /** 周次识别选中的那一行（今天落在它范围内）决定学期起点，顺序不再有影响。 */
+    @Test
+    fun buildPrefersHeaderContainingToday() {
+        val body = "课表查询\n第1周 2026-08-31/2026-09-06\n第11周 2026-11-09/2026-11-15\n" +
+            "第2周 2026-09-07/2026-09-13\n周一"
+        val s = com.jianke.schedule.data.ScheduleBuilder.build(
+            body,
+            emptyList(),
+            listOf(11),
+            java.time.LocalDate.of(2026, 11, 14),
+        )
+        assertEquals("第 11 周", s.semester.label)
+        assertEquals("2026-08-31", s.semester.startDate) // 第11周周一 11-09 往前推 10 周
+    }
+
     @Test
     fun readsWeeksFromCurrentFullScanFormat() {
         val raw = JSONObject()

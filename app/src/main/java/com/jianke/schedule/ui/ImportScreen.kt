@@ -150,14 +150,15 @@ fun ImportScreen(
         // 让仍在页面内运行的整学期扫描立即失效，避免两套翻周循环互相抢页面。
         inject("window.__gxkFullScanToken = null;")
         status = "正在逐周读取…"
-        inject(ScheduleJs.scrapeScript, 300L)
+        // 抓取脚本自带「网格就绪才动手」的门，App 侧只留一小段缓冲
+        inject(ScheduleJs.scrapeScript, 100L)
     }
 
     fun startFastScan() {
         if (scan.finished || scan.phase == PHASE_FAST || scan.phase == PHASE_SLOW) return
         scan.phase = PHASE_FAST
         status = "正在一次性读取整学期…"
-        inject(ScheduleJs.fullScanScript, 300L)
+        inject(ScheduleJs.fullScanScript, 100L)
         mainHandler.postDelayed({
             if (!scan.finished && scan.phase == PHASE_FAST) startSlowScan()
         }, 40000L)
@@ -246,14 +247,19 @@ fun ImportScreen(
         if (scan.finished) return
         lastRaw = payload
         ScheduleStore.saveDebugDump(context, "scrape.json", payload)
-        scan.lastBody = try {
-            JSONObject(payload).optString("bodyText")
+        val root = try {
+            JSONObject(payload)
         } catch (t: Throwable) {
-            ""
+            null
         }
-        // 和接口校验走同一个周次识别：优先认表头，防止抓到下拉框里其它的「第N周」。
-        // 之前这里各养了一份裸正则，v3.7.4 修周次识别时只改了校验那条路，这里悄悄漏了。
-        val week = WeekParser.currentWeekOf(scan.lastBody)
+        scan.lastBody = root?.optString("bodyText").orEmpty()
+        // 「页面正在显示的周」优先用 JS 从翻页按钮旁的表头结构里提取的值：
+        // 正文里的周次下拉框列着全学期周次（其中真实当前周的日期罩着今天），
+        // 按正文顺序或「今天在范围内」识别都会在翻到别的周时贴错周。
+        // 结构提取失败（0）才退回正文识别 —— 那时页面还没翻过周，识别的也是真实当前周。
+        val reportedWeek = root?.optInt("displayedWeek", 0) ?: 0
+        val week = reportedWeek.takeIf { it in 1..MAX_WEEKS }
+            ?: WeekParser.currentWeekOf(scan.lastBody)
         val grid = MobileDomParser.parse(payload)
         if (week in 1..MAX_WEEKS) {
             if (week == scan.lastWeek) scan.stale++ else scan.stale = 0
@@ -295,6 +301,33 @@ fun ImportScreen(
         }
     }
 
+    /**
+     * 点过「下一周/上一周」后不再盲等固定 1.4 秒：每 100ms 跑一次轻量周次探测，
+     * 新周次**连续两次一致**（渲染已稳定）才注入完整抓取。
+     * 之前一周一趟硬耗 1.4s，现在通常 300~500ms 就确认翻页成功。
+     * 5 秒还没翻过去就照旧抓一次，交给 stale 逻辑判定卡死。
+     */
+    fun pollWeekThenScrape(oldWeek: Int, lastSeen: Int, probe: Int) {
+        if (scan.finished || scan.phase != PHASE_SLOW) return
+        if (probe >= 50) {
+            inject(ScheduleJs.scrapeScript, 200L)
+            return
+        }
+        webViewRef?.evaluateJavascript(ScheduleJs.weekProbeScript) { result ->
+            if (scan.finished || scan.phase != PHASE_SLOW) return@evaluateJavascript
+            val week = result?.trim()?.removeSurrounding("\"")?.toIntOrNull() ?: 0
+            val changed = week in 1..MAX_WEEKS && week != oldWeek
+            if (changed && week == lastSeen) {
+                inject(ScheduleJs.scrapeScript, 100L)
+            } else {
+                mainHandler.postDelayed(
+                    { pollWeekThenScrape(oldWeek, if (changed) week else lastSeen, probe + 1) },
+                    100L,
+                )
+            }
+        }
+    }
+
     fun handleNav(payload: String) {
         if (scan.finished) return
         val ok = try {
@@ -302,7 +335,7 @@ fun ImportScreen(
         } catch (t: Throwable) {
             false
         }
-        if (!ok) finishWithWeekMap() else inject(ScheduleJs.scrapeScript, 1400L)
+        if (!ok) finishWithWeekMap() else pollWeekThenScrape(scan.lastWeek, -1, 0)
     }
 
 
@@ -534,7 +567,8 @@ fun ImportScreen(
                                         if (!scan.apiTried) {
                                             scan.apiTried = true
                                             status = "正在校验直连接口…"
-                                            inject(ApiProbeJs.script, 400L)
+                                            // 探测脚本自带「网格就绪才动手」的门，这里只留一小段缓冲
+                                            inject(ApiProbeJs.script, 100L)
                                             // 接口这条路最多等 10 秒，超时就退回页面解析
                                             mainHandler.postDelayed({
                                                 if (!scan.finished && scan.phase == PHASE_API) {
@@ -546,7 +580,7 @@ fun ImportScreen(
                                         }
                                     }
 
-                                    PHASE_SLOW -> inject(ScheduleJs.scrapeScript, 900L)
+                                    PHASE_SLOW -> inject(ScheduleJs.scrapeScript, 150L)
 
                                     else -> {
                                         if (!scan.fastInjected) {

@@ -4,6 +4,7 @@ import com.jianke.schedule.data.WeekParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.LocalDate
 
 /**
  * 周次识别的统一入口。接口校验、逐周扫描、学期起点反推全走这一份，
@@ -39,5 +40,49 @@ class WeekParserTest {
         assertEquals(2 to "2026-09-14", WeekParser.headerOf("第2周\n2026-09-14/2026-09-20"))
         assertNull(WeekParser.headerOf("没有表头"))
         assertNull(WeekParser.headerOf("第7周 没有日期"))
+    }
+
+    /**
+     * 下拉框的周次文字与表头格式一模一样（「第N周 日期/日期」），
+     * 谁排在正文前面没有保证。最强判据是「今天落在哪个日期范围内」——
+     * 无论顺序怎么排，日期范围不会骗人。
+     */
+    @Test
+    fun containmentPicksWeekContainingToday() {
+        val body = "第1周 2026-08-31/2026-09-06\n第11周 2026-11-09/2026-11-15\n第2周 2026-09-07/2026-09-13"
+        assertEquals(11, WeekParser.currentWeekOf(body, LocalDate.of(2026, 11, 14)))
+        assertEquals(1, WeekParser.currentWeekOf(body, LocalDate.of(2026, 9, 2)))
+        // 学期外（假期）：没有任何一行罩住今天，退回第一个匹配，行为与旧版一致
+        assertEquals(1, WeekParser.currentWeekOf(body, LocalDate.of(2026, 12, 1)))
+    }
+
+    /** 学期总周数只信「1..W 连续列全」的列表；半截、跳号的列表一律不可信。 */
+    @Test
+    fun semesterWeekCountNeedsContiguousFullList() {
+        val sb = StringBuilder()
+        var monday = LocalDate.of(2026, 8, 31)
+        for (w in 1..16) {
+            sb.append("第").append(w).append("周 ").append(monday).append("/")
+                .append(monday.plusDays(6)).append('\n')
+            monday = monday.plusWeeks(1)
+        }
+        assertEquals(16, WeekParser.semesterWeekCount(sb.toString()))
+
+        // 跳号（缺第 2 周）不可信
+        val gapped = StringBuilder()
+        monday = LocalDate.of(2026, 8, 31)
+        for (w in 1..16) {
+            if (w == 2) { monday = monday.plusWeeks(1); continue }
+            gapped.append("第").append(w).append("周 ").append(monday).append("/")
+                .append(monday.plusDays(6)).append('\n')
+            monday = monday.plusWeeks(1)
+        }
+        assertEquals(null, WeekParser.semesterWeekCount(gapped.toString()))
+
+        // 条目太少（不足 8 行）不可信
+        assertEquals(
+            null,
+            WeekParser.semesterWeekCount("第1周 2026-08-31/2026-09-06\n第2周 2026-09-07/2026-09-13"),
+        )
     }
 }

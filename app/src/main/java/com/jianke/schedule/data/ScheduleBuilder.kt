@@ -9,13 +9,13 @@ object ScheduleBuilder {
         bodyText: String,
         courses: List<Course>,
         allWeeks: List<Int> = emptyList(),
+        today: LocalDate = LocalDate.now(),
     ): Schedule {
-        // 优先认「第N周 日期」表头：周次和日期来自同一行，配对不会错。
-        // 之前周次、日期各用各的正则取第一个匹配，正文里一旦有别的「第N周」先出现，
-        // 两者就可能配到不同的行上去，反推出的学期起点整学期错位。
-        val header = WeekParser.headerOf(bodyText)
-        val week = header?.first ?: WeekParser.currentWeekOf(bodyText).takeIf { it > 0 }
-        val startDate = startDateOf(header?.second, week)
+        // 当前周与日期取自同一行（WeekParser 会优先认「今天落在日期范围内」的那行），
+        // 周次和学期起点配对不会错。
+        val header = WeekParser.pickHeader(bodyText, today)
+        val week = header?.week ?: WeekParser.currentWeekOf(bodyText, today).takeIf { it > 0 }
+        val startDate = startDateOf(header?.startDate, week)
         val maxWeek = maxOf(
             allWeeks.maxOrNull() ?: 0,
             courses.flatMap { it.weeks }.maxOrNull() ?: 0,
