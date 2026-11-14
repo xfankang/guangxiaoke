@@ -107,6 +107,34 @@ class ZfsoftParserTest {
         assertEquals(listOf(1, 3, 5, 7, 9, 11, 13, 15), c.weeks)
     }
 
+    /** 「(双)/(偶)」取偶数周；「奇/偶」与「单/双」是同义写法，都要认。 */
+    @Test
+    fun evenAndQiOuVariantsAreParsed() {
+        assertEquals(
+            listOf(2, 4, 6, 8, 10, 12, 14, 16),
+            ZfsoftParser.parseWeeks("1-16周(双)"),
+        )
+        assertEquals(
+            listOf(2, 4, 6, 8, 10, 12, 14, 16),
+            ZfsoftParser.parseWeeks("1-16周(偶)"),
+        )
+        assertEquals(
+            listOf(1, 3, 5, 7, 9, 11, 13, 15),
+            ZfsoftParser.parseWeeks("1-16周(奇)"),
+        )
+        assertEquals(listOf(2, 4), ZfsoftParser.parseWeeks("1-4周(双周)"))
+    }
+
+    /**
+     * 「(单双)」两标并存 = 不筛奇偶、整段全收。
+     * 只认「单」的话会把偶数周的课静默丢掉半个学期，且双向校验在单周页面上发现不了。
+     */
+    @Test
+    fun bothOddAndEvenMarkersMeanNoFilter() {
+        assertEquals((1..16).toList(), ZfsoftParser.parseWeeks("1-16周(单双)"))
+        assertEquals((1..16).toList(), ZfsoftParser.parseWeeks("1-16周(奇偶)"))
+    }
+
     @Test
     fun malformedWeekTextDoesNotBecomeEveryWeek() {
         assertTrue(ZfsoftParser.parseWeeks("未知周次").isEmpty())

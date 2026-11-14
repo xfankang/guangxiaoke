@@ -15,9 +15,6 @@ object SchoolEndpoints {
     const val SSO_LOGIN =
         "https://ids.gzist.edu.cn/lyuapServer/login?service=http://jw.gzist.edu.cn/sso/lyiotlogin"
 
-    /** 正方教务系统本地登录页。 */
-    const val LOCAL_LOGIN = "http://jw.gzist.edu.cn/jwglxt/xtgl/login_slogin.html"
-
     const val JW_HOST = "jw.gzist.edu.cn"
 
     /** 教务根地址（导入会话快速路径的 Cookie 判断用）。 */

@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +64,7 @@ import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.Schedule
 import com.jianke.schedule.data.layoutDay
 import com.jianke.schedule.data.schoolBigPeriods
+import com.jianke.schedule.data.ScheduleWeek
 import com.jianke.schedule.data.schoolLessonTimes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,7 +82,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 private const val ROW_COUNT = 5
@@ -106,7 +105,7 @@ const val UPDATE_WARNING = "由于无法实现实时更新课表，为了防止�
 fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () -> Unit) {
     var tab by remember { mutableIntStateOf(MODE_WEEK) }
     val totalWeeks = (schedule?.semester?.totalWeeks ?: 1).coerceAtLeast(1)
-    val currentWeek = remember(schedule) { schedule?.let { currentWeekOf(it) } ?: 1 }
+    val currentWeek = remember(schedule) { schedule?.let { ScheduleWeek.currentWeekOf(it) } ?: 1 }
     val pagerState = rememberPagerState(
         initialPage = (currentWeek - 1).coerceIn(0, totalWeeks - 1),
     ) { totalWeeks }
@@ -145,7 +144,7 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
                 when (mode) {
                     MODE_WEEK -> Column(modifier = Modifier.fillMaxSize()) {
                         val shownWeek = pagerState.currentPage + 1
-                        val dates = weekDatesOf(schedule.semester.startDate, shownWeek)
+                        val dates = ScheduleWeek.weekDatesOf(schedule.semester.startDate, shownWeek)
                         val weekCourses = schedule.coursesOfWeek(shownWeek)
                         WeekNavBar(
                             week = shownWeek,
@@ -426,28 +425,6 @@ private fun WeekNavBar(
             enabled = week < totalWeeks,
         )
     }
-}
-
-private fun currentWeekOf(schedule: Schedule): Int {
-    val start = runCatching { LocalDate.parse(schedule.semester.startDate) }.getOrNull()
-        ?: return 1
-    val days = ChronoUnit.DAYS.between(start, LocalDate.now())
-    if (days < 0) return 1
-    val total = maxOf(1, schedule.semester.totalWeeks)
-    return ((days / 7).toInt() + 1).coerceIn(1, total)
-}
-
-/**
- * 第 week 周周一 ~ 周日。
- *
- * 学期开始日期缺失或者解析不了时返回 7 个 null，表头退化成只显示星期几，
- * 不会因为一份没有日期的课表就崩或者错位。
- */
-private fun weekDatesOf(startDate: String, week: Int): List<LocalDate?> {
-    val start = runCatching { LocalDate.parse(startDate) }.getOrNull()
-        ?: return List(7) { null }
-    val monday = start.plusWeeks((week - 1).toLong())
-    return (0..6).map { monday.plusDays(it.toLong()) }
 }
 
 private val RANGE_FORMAT = DateTimeFormatter.ofPattern("M/d")

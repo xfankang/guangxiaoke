@@ -4,6 +4,29 @@
 
 ---
 
+## v4.3.6（2026-11-14）
+- **导入提速**：登录完成后打开课表页时关闭图片加载（登录页保留，验证码不受影响）；
+  注入抓取脚本去掉与脚本内就绪等待重复的固定延时；逐周驱动的点击前固定等待
+  1200ms → 300ms（翻页是否成功由周次探测轮询把关）
+- **计时打点补全**：接口探测开始/通过/失败、整学期扫描开始/完成、逐周扫描、保存完成
+  全部落 import_debug/timing.txt —— 下次真机导入后看这份文件就能定位慢在学校网站还是 App
+- **课表正确性修复**：
+  - 周次文本「(单双)/(奇偶)」两标并存时不再只按单周算（此前会静默丢掉偶数周的课，
+    且双向校验在单周页面上发现不了）；新增 奇/偶 写法支持
+  - 学期开始日期缺失时「今日课程」不再显示第 1 周的课，退回导入时记录的周次快照
+  - 学期起点反推与日期表头强制对齐周一：个别学期周二开学时日期不再整体错位一天
+  - 整学期扫描的 JS 兜底：格子缺 data-qsj 时按「行号 × 每行小节数」推起始节（原按行号+1，
+    一行 2 小节的页面会算错节次）
+  - 周次表头日期支持不补零格式（2026-9-1）
+- **稳定性**：损坏的课表文件改名留档（schedule.json.corrupt）而非无痕丢失，便于排查
+- **清理**：删除无引用代码约 90 行（SchoolEndpoints.LOCAL_LOGIN、semesterTabScript、
+  ScheduleStore.clear/appendDebugLog、Wallpaper.hasWallpaper、MobileDomParser.unitOf、
+  WeekParser.headerOf、BigPeriod.section/timeText、Ui.HitTarget、InnerShadow.Default 等）、
+  4 个未使用 import、1 个未引用的 drawable、4 个未使用依赖（serialization/插件、
+  miuix-preference、lifecycle-viewmodel、ui-tooling-preview）；删除 fullScan 脚本里
+  一整段复制粘贴产生的重复声明；周次重算函数从 HomeScreen 移到数据层 ScheduleWeek.kt
+  （纯函数独立可测试）；新增 ScheduleBuilderTest / ScheduleWeekTest，91 个单测全过
+
 ## v4.3.5（2026-11-14）
 - **课表页三个模块切换加过渡动画**：「周课表 / 今日课程 / 更新课表」从硬切改为与主页面三屏
   共用同一套 screenTransition（先淡出 160ms → 延迟 70ms + 280ms 减速淡入 + 1/24 屏上移）；

@@ -15,8 +15,6 @@ package com.jianke.schedule.web
  */
 object ApiProbeJs {
 
-    const val BRIDGE_NAME = ScheduleJs.BRIDGE_NAME
-
     val script: String = """
 (function () {
   if (window.__gxkApiRunning) { return; }

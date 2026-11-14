@@ -191,28 +191,6 @@ object ScheduleJs {
   function fire(el) {
     try { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } catch (e) { }
   }
-  var byWeek = {};
-  var weekList = [];
-  var guard = 0;
-  var body0 = (document.body ? (document.body.innerText || '') : '').slice(0, 3000);
-  function record() {
-    // 只有「已经拿到过非空数据」的周才算记录过。空数组在 JS 里是真值，
-    // 若首屏还没渲染完就注入脚本，当前周会被记成空——往后翻再回来时必须允许重录，
-    // 否则这一周会在最终合并里永远缺课。
-    var w = weekNo();
-    if (!w || (byWeek[w] && byWeek[w].length)) { return w; }
-    var cells = grab();
-    if (cells && cells.length > 0) {
-      byWeek[w] = cells;
-      // 空周重录后 w 可能已经在 weekList 里，去重避免最终结果里同一周出现两次
-      if (weekList.indexOf(w) < 0) { weekList.push(w); }
-      report('progress:' + w);
-    } else {
-      byWeek[w] = [];
-      if (weekList.indexOf(w) < 0) { weekList.push(w); }
-    }
-    return w;
-  }
   // 页面网格还没渲染出来时等一等（就绪等待替代 App 侧的固定延时）：
   // 一出现立刻往下走，5 秒仍没有就照常执行，兜底行为与旧固定延时一致。
   function gxkReady(fn) {
@@ -312,6 +290,9 @@ object ScheduleJs {
   function finishAll() {
     if (wrapDone || !active()) { return; }
     wrapDone = true;
+    // 每行小节数要先量出来：data-qsj 缺失时按「行号 × 每行小节数 + 1」推起始节，
+    // 与 Kotlin 侧 parsePageCells 的兜底同口径（直接行号+1 只对一行 1 小节的页面成立）。
+    var m = metrics();
     var courses = {};
     var order = [];
     for (var i = 0; i < weekList.length; i++) {
@@ -324,7 +305,7 @@ object ScheduleJs {
         if (name.length < 2) { continue; }
         var room = (lines[1] || '').trim();
         var start = parseInt(c.q, 10);
-        if (!start || start < 1) { start = c.p + 1; }
+        if (!start || start < 1) { start = c.p * m.perRow + 1; }
         var key = name + '|' + room + '|' + c.d + '|' + start + '|' + c.h;
         if (!courses[key]) {
           courses[key] = { n: name, r: room, d: c.d + 1, p: start, h: c.h, col: c.col, w: [] };
@@ -335,7 +316,6 @@ object ScheduleJs {
     }
     var list = [];
     for (var i2 = 0; i2 < order.length; i2++) { list.push(courses[order[i2]]); }
-    var m = metrics();
     report('done:' + JSON.stringify({
       weeks: weekList.sort(function (a, b) { return a - b; }),
       courses: list,
@@ -696,20 +676,6 @@ object ScheduleJs {
   if (!target) { report(JSON.stringify({ ok: false, reason: 'no-next-button' })); return; }
   fire(target);
   report(JSON.stringify({ ok: true }));
-})();
-""".trimIndent()
-
-    /** 兜底：切到「学期课表」。 */
-    val semesterTabScript: String = """
-(function () {
-  var all = document.querySelectorAll('div,span,a,li');
-  for (var i = 0; i < all.length; i++) {
-    var e = all[i];
-    if (e.children && e.children.length > 0) { continue; }
-    if ((e.innerText || '').trim() !== '学期课表') { continue; }
-    try { e.click(); } catch (err) { }
-    return;
-  }
 })();
 """.trimIndent()
 }

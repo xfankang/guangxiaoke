@@ -62,7 +62,8 @@ internal object ScheduleCodec {
         }.orEmpty()
         return Schedule(
             semester = semester,
-            periodTimes = periods.ifEmpty { defaultPeriodTimes },
+            // 缺作息表时回退学校统一作息（与 ScheduleBuilder 写入的那套一致）
+            periodTimes = periods.ifEmpty { schoolPeriodTimes },
             courses = courses,
             updatedAt = root.optLong("updatedAt"),
         )

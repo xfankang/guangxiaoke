@@ -20,9 +20,10 @@ object WeekParser {
     /**
      * 「第N周 2026-11-10/2026-11-16」——周日期能拿到时才能做「今天是否在范围内」
      * 的判定，所以正则把可选的第二个日期也捕获出来。
+     * 月/日允许不补零（页面渲染成 2026-9-1 也认），解析前统一补齐。
      */
     private val WEEK_HEADER_REGEX =
-        Regex("第\\s*([0-9]{1,2})\\s*周\\s*([0-9]{4}-[0-9]{2}-[0-9]{2})(?:\\s*/\\s*([0-9]{4}-[0-9]{2}-[0-9]{2}))?")
+        Regex("第\\s*([0-9]{1,2})\\s*周\\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:\\s*/\\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2}))?")
     private val WEEK_REGEX = Regex("第\\s*([0-9]+)\\s*周")
 
     /** 一行「第N周 起始日期/结束日期」。 */
@@ -34,21 +35,20 @@ object WeekParser {
         for (m in WEEK_HEADER_REGEX.findAll(bodyText)) {
             val week = m.groupValues[1].toIntOrNull() ?: continue
             if (week !in 1..30) continue
-            out.add(HeaderPair(week, m.groupValues[2], m.groupValues[3].ifEmpty { null }))
+            val start = normalizeDate(m.groupValues[2], m.groupValues[3], m.groupValues[4])
+            val end = if (m.groupValues[5].isEmpty()) {
+                null
+            } else {
+                normalizeDate(m.groupValues[5], m.groupValues[6], m.groupValues[7])
+            }
+            out.add(HeaderPair(week, start, end))
         }
         return out
     }
 
-    /**
-     * 取表头「第N周 + 日期」：两者必然来自同一行，反推学期起点时不会配错对。
-     * 没有表头、或周次不在合理范围（1~30）时返回 null。
-     */
-    fun headerOf(bodyText: String): Pair<Int, String>? {
-        val m = WEEK_HEADER_REGEX.find(bodyText) ?: return null
-        val week = m.groupValues[1].toIntOrNull() ?: return null
-        if (week !in 1..30) return null
-        return week to m.groupValues[2]
-    }
+    /** "2026-9-1" -> "2026-09-01"：后续 LocalDate.parse 只认补零的 ISO 格式。 */
+    private fun normalizeDate(year: String, month: String, day: String): String =
+        year + "-" + month.padStart(2, '0') + "-" + day.padStart(2, '0')
 
     /**
      * 选出「当前周」对应的那一行：今天落在日期范围内优先；学期外退回第一个匹配。

@@ -142,6 +142,7 @@ fun ImportScreen(
             ScheduleStore.save(context, schedule)
             importedCourses = courses
             importedCount = courses.size
+            scan.log("课表保存完成（" + courses.size + " 门）")
             // 只有保存成功后才同步会话，失败时保留旧课表并给出可见错误。
             runCatching { android.webkit.CookieManager.getInstance().flush() }
             true
@@ -166,15 +167,17 @@ fun ImportScreen(
         // 让仍在页面内运行的整学期扫描立即失效，避免两套翻周循环互相抢页面。
         inject("window.__gxkFullScanToken = null;")
         status = "正在逐周读取…"
-        // 抓取脚本自带「网格就绪才动手」的门，App 侧只留一小段缓冲
-        inject(ScheduleJs.scrapeScript, 100L)
+        scan.log("逐周扫描开始")
+        // 抓取脚本自带「网格就绪才动手」的门，App 侧不再垫固定延时
+        inject(ScheduleJs.scrapeScript)
     }
 
     fun startFastScan() {
         if (scan.finished || scan.phase == PHASE_FAST || scan.phase == PHASE_SLOW) return
         scan.phase = PHASE_FAST
         status = "正在一次性读取整学期…"
-        inject(ScheduleJs.fullScanScript, 100L)
+        scan.log("整学期扫描开始")
+        inject(ScheduleJs.fullScanScript)
         mainHandler.postDelayed({
             if (!scan.finished && scan.phase == PHASE_FAST) startSlowScan()
         }, 40000L)
@@ -212,6 +215,7 @@ fun ImportScreen(
             null
         }
         if (obj == null) {
+            scan.log("接口探测返回异常，回退页面扫描")
             startFastScan()
             return
         }
@@ -231,10 +235,12 @@ fun ImportScreen(
             // 校验通过：那就不该再挂「没通过校验」的卡片，只留一份周次核对表备用
             apiReport = null
             ScheduleStore.saveDebugDump(context, "kbList.json", text)
+            scan.log("接口校验通过（" + courses.size + " 条）")
             val weeks = courses.flatMap { it.weeks }.distinct().sorted()
             saveAndFinish(courses, body, weeks, "直连接口（校验通过）")
         } else {
             apiReport = report
+            scan.log("接口校验未通过，回退页面扫描")
             startFastScan()
         }
     }
@@ -253,8 +259,10 @@ fun ImportScreen(
         if (merged != null && merged.isNotEmpty()) {
             val body = MobileDomParser.bodyOfFullScan(json)
             val weeks = MobileDomParser.weeksOf(json)
+            scan.log("整学期扫描完成（" + weeks.size + " 周）")
             saveAndFinish(merged, body, weeks, "整学期扫描 " + weeks.size + " 周")
         } else {
+            scan.log("整学期扫描结果为空，回退逐周扫描")
             startSlowScan()
         }
     }
@@ -306,13 +314,17 @@ fun ImportScreen(
                 scan.backward = true
                 scan.stale = 0
                 status = "往回补前面的周次…"
-                inject(ScheduleJs.prevScript, 1000L)
+                // 抓取只在网格稳定后回调，点「<」不需要再垫长延时；翻页后的稳定性
+                // 由 pollWeekThenScrape 的连续一致判定兜住
+                inject(ScheduleJs.prevScript, 300L)
             }
 
             stuck -> finishWithWeekMap()
             else -> inject(
                 if (scan.backward) ScheduleJs.prevScript else ScheduleJs.navScript,
-                1200L,
+                // 旧值 1200ms 是纯固定等待：抓取回调本来就发生在网格稳定之后，
+                // 翻页是否成功由周次探测轮询把关，300ms 防抖足够
+                300L,
             )
         }
     }
@@ -362,7 +374,6 @@ fun ImportScreen(
             "fullscan" -> if (scan.phase == PHASE_FAST) handleFullScan(payload)
             "scrape" -> if (scan.phase == PHASE_SLOW) handleScrape(payload)
             "nav" -> if (scan.phase == PHASE_SLOW) handleNav(payload)
-            "error" -> runCatching { ScheduleStore.appendDebugLog(context, payload) }
         }
     }
 
@@ -564,6 +575,8 @@ fun ImportScreen(
                                     scan.tableRequested = true
                                     status = "登录成功，正在打开课表…"
                                     scan.log("提前跳转课表页")
+                                    // 登录已完成，课表页是纯文字表格：关掉图片加载提速整页加载
+                                    view.settings.loadsImagesAutomatically = false
                                     view.loadUrl(SchoolEndpoints.COURSE_TABLE)
                                 }
                             }
@@ -577,6 +590,8 @@ fun ImportScreen(
                                     scan.tableRequested = false
                                     status = "登录会话已过期，请重新登录…"
                                     scan.log("快速路径会话失效，回退统一身份认证")
+                                    // 回登录页要恢复图片：统一身份认证可能有验证码
+                                    view.settings.loadsImagesAutomatically = true
                                     view.loadUrl(SchoolEndpoints.SSO_LOGIN)
                                     return
                                 }
@@ -601,6 +616,8 @@ fun ImportScreen(
                                 if (!scan.tableRequested && !url.contains("xskbcxMobile")) {
                                     scan.tableRequested = true
                                     status = "登录成功，正在打开课表…"
+                                    // 同上：登录页之后不再需要图片
+                                    view.settings.loadsImagesAutomatically = false
                                     view.loadUrl(SchoolEndpoints.COURSE_TABLE)
                                     return
                                 }
@@ -610,11 +627,13 @@ fun ImportScreen(
                                         if (!scan.apiTried) {
                                             scan.apiTried = true
                                             status = "正在校验直连接口…"
-                                            // 探测脚本自带「网格就绪才动手」的门，这里只留一小段缓冲
-                                            inject(ApiProbeJs.script, 100L)
+                                            scan.log("接口探测开始")
+                                            // 探测脚本自带「网格就绪才动手」的门，App 侧不再垫固定延时
+                                            inject(ApiProbeJs.script)
                                             // 接口这条路最多等 10 秒，超时就退回页面解析
                                             mainHandler.postDelayed({
                                                 if (!scan.finished && scan.phase == PHASE_API) {
+                                                    scan.log("接口探测超时（10s），回退页面扫描")
                                                     startFastScan()
                                                 }
                                             }, 10000L)
@@ -623,7 +642,7 @@ fun ImportScreen(
                                         }
                                     }
 
-                                    PHASE_SLOW -> inject(ScheduleJs.scrapeScript, 150L)
+                                    PHASE_SLOW -> inject(ScheduleJs.scrapeScript)
 
                                     else -> {
                                         if (!scan.fastInjected) {
@@ -650,6 +669,8 @@ fun ImportScreen(
                             scan.tableRequested = true
                             status = "登录会话仍有效，正在打开课表…"
                             scan.log("快速路径：直接进课表页")
+                            // 快速路径不经过登录页（无验证码需求），直接关图片提速
+                            settings.loadsImagesAutomatically = false
                             loadUrl(SchoolEndpoints.COURSE_TABLE)
                         } else {
                             scan.log("常规路径：打开统一身份认证")

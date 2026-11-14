@@ -163,8 +163,8 @@ object ZfsoftParser {
             // 空段只是格式噪音（末尾多写一个逗号、连写两个逗号），跳过继续解析其余段。
             // 不能因为它把整门课的周次判为无效，否则接口校验会白白失败、退到更慢的页面扫描。
             if (part.isEmpty()) continue
-            val odd = part.contains("单")
-            val even = part.contains("双")
+            val odd = part.contains("单") || part.contains("奇")
+            val even = part.contains("双") || part.contains("偶")
             val nums = Regex("[0-9]+").findAll(part)
                 .map { it.value.toIntOrNull() ?: -1 }
                 .filter { it > 0 }
@@ -179,6 +179,9 @@ object ZfsoftParser {
             for (w in lo..hi) {
                 if (w !in 1..30) continue
                 when {
+                    // 「(单双)」这类两标并存的写法 = 不筛奇偶，整段全收；
+                    // 只认 odd 分支会把偶数周的课静默丢掉半个学期
+                    odd && even -> result.add(w)
                     odd -> if (w % 2 == 1) result.add(w)
                     even -> if (w % 2 == 0) result.add(w)
                     else -> result.add(w)

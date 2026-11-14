@@ -37,12 +37,7 @@ data class InnerShadow(
     val color: Color = Color.Black.copy(alpha = 0.15f),
     val alpha: Float = 1f,
     val blendMode: BlendMode = DrawScope.DefaultBlendMode,
-) {
-    companion object {
-        @Stable
-        val Default: InnerShadow = InnerShadow()
-    }
-}
+)
 
 fun Modifier.innerShadow(
     shape: Shape,

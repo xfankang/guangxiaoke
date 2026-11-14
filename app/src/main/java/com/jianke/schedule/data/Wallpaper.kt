@@ -23,8 +23,6 @@ object Wallpaper {
 
     private fun tempFile(context: Context): File = File(context.filesDir, TEMP_NAME)
 
-    fun hasWallpaper(context: Context): Boolean = file(context).exists()
-
     /** 给旧图留底，供编辑器取消时恢复；没有旧图时清除陈旧备份。 */
     private fun backup(context: Context): Boolean = runCatching {
         val backup = backupFile(context)

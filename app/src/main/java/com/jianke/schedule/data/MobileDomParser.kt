@@ -241,15 +241,6 @@ object MobileDomParser {
         return if (two > one) 2 else 1
     }
 
-    /** 一行（一个大节）的像素高度；拿不到就返回 0，由调用方退回默认值。 */
-    internal fun unitOf(contentH: Double, rows: Int): Double {
-        if (contentH > 0 && rows > 0) {
-            val u = contentH / rows
-            if (u > 10) return u
-        }
-        return 0.0
-    }
-
     /**
      * 一格跨多少「小节」= 跨几行 × 每行小节数。
      * 旧实现直接拿 height/50 当小节数：页面每行 2 小节时，跨 4 行的大课

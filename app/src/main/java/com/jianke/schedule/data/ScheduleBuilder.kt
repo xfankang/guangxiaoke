@@ -36,7 +36,9 @@ object ScheduleBuilder {
     private fun startDateOf(dateText: String?, week: Int?): String {
         if (dateText == null || week == null) return ""
         return try {
-            val monday = LocalDate.parse(dateText)
+            // 表头日期按「本周一」对齐：个别学期从周二开学起算时，反推的学期起点
+            // 仍落在周一，展示层（weekDatesOf 同样按周一渲染）才不会整体错位一天
+            val monday = LocalDate.parse(dateText).with(java.time.DayOfWeek.MONDAY)
             monday.minusWeeks((week - 1).toLong()).toString()
         } catch (t: Throwable) {
             ""

@@ -32,14 +32,18 @@ class WeekParserTest {
         assertEquals(3, WeekParser.currentWeekOf("第99周 2026-01-01/2026-01-07\n第3周"))
     }
 
+    /** 月/日不补零的日期（2026-9-1）也要认得，解析前统一补齐。 */
     @Test
-    fun headerPairsWeekWithDate() {
-        val header = WeekParser.headerOf("课表查询\n第7周 2026-10-12/2026-10-18\n第3周 2026-09-14/2026-09-20")
-        assertEquals(7 to "2026-10-12", header)
-        // 页面若把周次和日期渲染成两行（innerText 里隔一个换行），同样认得出来
-        assertEquals(2 to "2026-09-14", WeekParser.headerOf("第2周\n2026-09-14/2026-09-20"))
-        assertNull(WeekParser.headerOf("没有表头"))
-        assertNull(WeekParser.headerOf("第7周 没有日期"))
+    fun headerPairsAcceptsNonPaddedDates() {
+        val pairs = WeekParser.headerPairs("第1周 2026-9-1/2026-9-7\n第2周 2026-9-8")
+        assertEquals(2, pairs.size)
+        assertEquals("2026-09-01", pairs[0].startDate)
+        assertEquals("2026-09-07", pairs[0].endDate)
+        assertEquals("2026-09-08", pairs[1].startDate)
+        assertEquals(null, pairs[1].endDate)
+        // 「今天落在范围内」对不补零日期同样成立
+        val body = "第1周 2026-8-31/2026-9-6\n第2周 2026-9-7/2026-9-13"
+        assertEquals(2, WeekParser.currentWeekOf(body, LocalDate.of(2026, 9, 10)))
     }
 
     /**

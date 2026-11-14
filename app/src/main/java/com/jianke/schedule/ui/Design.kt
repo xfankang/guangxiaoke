@@ -82,9 +82,6 @@ object Ui {
     /** 课表最左侧「第几节」那一列（走字位）的宽度。 */
     val PeriodGutter = 38.dp
 
-    /** 图标按钮的最小点按尺寸，低于 44dp 手指不好按。 */
-    val HitTarget = 44.dp
-
     /** 有自定义壁纸时，标题栏 / 底栏 / Dock 统一用这一层不透明度。 */
     const val Scrim = 0.88f
 

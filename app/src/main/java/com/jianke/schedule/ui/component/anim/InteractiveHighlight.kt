@@ -39,7 +39,6 @@ class InteractiveHighlight(
         Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
 
     private var startPosition = Offset.Zero
-    val offset: Offset get() = positionAnimation.value - startPosition
 
     @Language("AGSL")
     private val shader =

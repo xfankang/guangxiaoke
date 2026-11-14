@@ -11,7 +11,6 @@ object ScheduleStore {
 
     private const val FILE_NAME = "schedule.json"
     private const val DEBUG_DIR = "import_debug"
-    private const val MAX_DEBUG_LOG_BYTES = 256 * 1024
 
     private fun file(context: Context): File = File(context.filesDir, FILE_NAME)
 
@@ -35,20 +34,11 @@ object ScheduleStore {
                 ScheduleCodec.decode(root)
             }
         } catch (e: Exception) {
+            // 解析失败（文件损坏 / 写入中断）时把坏文件改名留档：
+            // 课表「消失」时还能拷出来看是哪里坏了，而不是无痕丢失
+            runCatching { f.renameTo(File(context.filesDir, FILE_NAME + ".corrupt")) }
             null
         }
-    }
-
-    fun clear(context: Context) {
-        AtomicFile(file(context)).delete()
-    }
-
-    fun appendDebugLog(context: Context, line: String) {
-        val dir = debugDir(context)
-        val log = File(dir, "log.txt")
-        // 诊断日志不能无限增长；达到上限后保留现场，等待下一次导入覆盖 dump。
-        if (log.length() > MAX_DEBUG_LOG_BYTES) return
-        log.appendText(line + "\n")
     }
 
     /** 把抓取到的原始内容落盘，方便排查解析问题。 */

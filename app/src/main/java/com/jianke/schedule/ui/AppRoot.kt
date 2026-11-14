@@ -33,7 +33,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.jianke.schedule.data.Prefs
-import com.jianke.schedule.data.Schedule
 import com.jianke.schedule.data.ScheduleStore
 import com.jianke.schedule.data.Wallpaper
 import com.jianke.schedule.ui.theme.AppTheme
