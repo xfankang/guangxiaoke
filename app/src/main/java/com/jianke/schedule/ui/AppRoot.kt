@@ -159,10 +159,14 @@ fun AppRoot() {
                                 AnimatedContent(
                                     targetState = tab,
                                     transitionSpec = {
+                                        // 标题与页面不同：新旧文字叠在同一位置，交叉淡化会
+                                        // 糊成一团（1x 下 ~90ms 的重影读起来就是「瞬间切换」）。
+                                        // 这里完全错开——旧字 140ms 退干净，新字再 240ms 淡入，
+                                        // 中间留一拍空档，效果清晰可辨且节奏仍是先收后放。
                                         fadeIn(
-                                            tween(280, delayMillis = 70, easing = LinearOutSlowInEasing),
+                                            tween(240, delayMillis = 140, easing = LinearOutSlowInEasing),
                                         ).togetherWith(
-                                            fadeOut(tween(160, easing = FastOutLinearInEasing)),
+                                            fadeOut(tween(140, easing = FastOutLinearInEasing)),
                                         )
                                     },
                                     label = "topBar",
