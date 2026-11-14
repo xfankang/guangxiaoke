@@ -1,5 +1,15 @@
 package com.jianke.schedule.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -109,6 +120,8 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
     var selectedCourse by remember { mutableStateOf<Course?>(null) }
     var anchorRect by remember { mutableStateOf<Rect?>(null) }
     var lastDismissAt by remember { mutableStateOf(0L) }
+    // 浮窗出入动画的开关：与 selectedCourse 分开管理，关闭时先播退出动画再移除浮层
+    var detailVisible by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -165,18 +178,20 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
                         } else {
                             -1
                         },
+                        highlight = if (detailVisible) selectedCourse else null,
                         onCourseClick = { course, rect ->
                             val now = System.currentTimeMillis()
                             // 浮层是独立窗口：点外面时它会先被关掉，这一次触摸就不能再当成
                             // 「点课程」而把浮层又打开（否则同一个位置会反复弹）。
                             if (now - lastDismissAt < 320L) {
                                 lastDismissAt = 0L
-                            } else if (selectedCourse == course) {
-                                // 再点同一门课：收起浮层
-                                selectedCourse = null
+                            } else if (selectedCourse == course && detailVisible) {
+                                // 再点同一门课：浮窗播放收起动画
+                                detailVisible = false
                             } else {
                                 selectedCourse = course
                                 anchorRect = rect
+                                detailVisible = true
                             }
                         },
                     )
@@ -205,19 +220,37 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
         Popup(
             popupPositionProvider = CoursePopupPositionProvider(rect),
             onDismissRequest = {
-                selectedCourse = null
+                // 点外面：先播收起动画，播完再移除浮层（见下方 LaunchedEffect）
+                detailVisible = false
                 lastDismissAt = System.currentTimeMillis()
             },
             // focusable = true：点浮层外面时由浮层窗口吃掉这次触摸并关闭，
             // 不会「穿透」到底下的课程格子又把它点开。
             properties = PopupProperties(focusable = true),
         ) {
-            Card(
-                modifier = Modifier.width(266.dp),
-                cornerRadius = 18.dp,
-                insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
+            AnimatedVisibility(
+                visible = detailVisible,
+                enter = scaleIn(
+                    initialScale = 0.86f,
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
+                ) + fadeIn(tween(150)),
+                exit = scaleOut(targetScale = 0.92f, animationSpec = tween(140)) + fadeOut(tween(140)),
             ) {
-                CourseDetailCard(course = course)
+                Card(
+                    modifier = Modifier.width(266.dp),
+                    cornerRadius = 18.dp,
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
+                ) {
+                    CourseDetailCard(course = course)
+                }
+            }
+        }
+
+        // 收起动画播完后移除浮层（140ms 动画 + 余量）
+        LaunchedEffect(detailVisible) {
+            if (!detailVisible) {
+                delay(160)
+                if (!detailVisible) selectedCourse = null
             }
         }
     }
@@ -526,6 +559,7 @@ private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
 private fun WeekGrid(
     courses: List<Course>,
     todayIndex: Int,
+    highlight: Course?,
     onCourseClick: (Course, Rect) -> Unit,
 ) {
     val wallpaper = LocalWallpaperActive.current
@@ -603,9 +637,19 @@ private fun WeekGrid(
                     val x = Ui.PeriodGutter + step * (day - 1) + laneW * p.lane
                     val y = rowHeight * p.startRow
                     val h = rowHeight * (p.endRow - p.startRow + 1)
+                    // 浮窗显示期间，来源格子轻微放大，点浮窗的来去有了「从哪来」的反馈
+                    val cellScale by animateFloatAsState(
+                        targetValue = if (highlight === course) 1.05f else 1f,
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 500f),
+                        label = "cellScale",
+                    )
                     Box(
                         modifier = Modifier
                             .offset(x = x, y = y)
+                            .graphicsLayer {
+                                scaleX = cellScale
+                                scaleY = cellScale
+                            }
                             .width(laneW)
                             .height(h)
                             .onGloballyPositioned { coords ->

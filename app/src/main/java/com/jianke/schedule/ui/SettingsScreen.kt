@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -106,10 +104,11 @@ fun SettingsScreen(
         }
     }
 
+    // 页面固定住：一屏放得下就不滚动，拖动不再有上下移动
+    // （内容真的放不下的小屏 / 大字体场景，底部会被裁掉 —— 按需求优先固定）
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .fillMaxSize(),
     ) {
         // 内容从玻璃顶栏下面开始（滚动时卡片从玻璃下穿过），首尾留出玻璃层的高度
         Spacer(Modifier.height(contentPadding.calculateTopPadding()))
