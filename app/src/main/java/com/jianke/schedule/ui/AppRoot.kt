@@ -5,10 +5,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,10 +23,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.jianke.schedule.data.Prefs
@@ -38,12 +36,12 @@ import com.jianke.schedule.data.Wallpaper
 import com.jianke.schedule.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Weeks
@@ -65,6 +63,7 @@ private fun barSurface(): Color = if (LocalWallpaperActive.current) {
     MiuixTheme.colorScheme.surface
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
@@ -85,7 +84,7 @@ fun AppRoot() {
     var darkOverride by remember { mutableStateOf(override) }
 
     var dock by remember { mutableStateOf(Prefs.dockEnabled(context)) }
-    // 悬浮 Dock 自己控制位置：贴着系统导航栏上方 6dp。
+    // 悬浮 Dock 自己控制位置：贴着系统导航栏上方 8dp。
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var wallpaperVersion by remember { mutableIntStateOf(0) }
     var wallpaper by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -114,163 +113,166 @@ fun AppRoot() {
     }
 
     AppTheme(darkOverride = darkOverride) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Dock 毛玻璃采样的内容层：先铺一层表面色保证不透明，再画真实内容
-            val backdropSurface = MiuixTheme.colorScheme.surface
-            val backdrop = rememberLayerBackdrop {
-                drawRect(backdropSurface)
-                drawContent()
-            }
+        // 关闭过度滚动回弹/拉伸：内容一屏放得下的页面拖动时不再上下晃动
+        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // 壁纸底层（有自定义壁纸时铺在最下面）
+                val currentWallpaper = wallpaper
+                if (currentWallpaper != null) {
+                    WallpaperLayer(
+                        bitmap = currentWallpaper,
+                        scale = wpScale,
+                        fracX = wpOffsetX,
+                        fracY = wpOffsetY,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MiuixTheme.colorScheme.surface.copy(alpha = Ui.WallpaperDim)),
+                    )
+                }
 
-            val currentWallpaper = wallpaper
-            if (currentWallpaper != null) {
-                WallpaperLayer(
-                    bitmap = currentWallpaper,
-                    scale = wpScale,
-                    fracX = wpOffsetX,
-                    fracY = wpOffsetY,
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MiuixTheme.colorScheme.surface.copy(alpha = Ui.WallpaperDim)),
-                )
-            }
+                // Dock 毛玻璃采样的内容层：先铺一层表面色保证不透明，再画真实内容
+                val backdropSurface = MiuixTheme.colorScheme.surface
+                val backdrop = rememberLayerBackdrop {
+                    drawRect(backdropSurface)
+                    drawContent()
+                }
 
-            CompositionLocalProvider(LocalWallpaperActive provides (wallpaper != null)) {
-                top.yukonga.miuix.kmp.basic.Scaffold(
-                    topBar = {
-                        SmallTopAppBar(
-                            title = when (tab) {
-                                0 -> "广小课"
-                                1 -> "设置"
-                                else -> "关于"
-                            },
-                            // 「广小课」下面这行小字
-                            subtitle = if (tab == 0) "天天开心" else "",
-
-                            color = barSurface(),
-                        )
-                    },
-                    bottomBar = {
-                        if (!dock) {
-                            NavigationBar(
-                                mode = NavigationBarDisplayMode.IconOnly,
-                                color = barSurface(),
-                            ) {
-                                NavigationBarItem(
-                                    selected = tab == 0,
-                                    onClick = { tab = 0 },
-                                    icon = MiuixIcons.Weeks,
-                                    label = "课表",
-                                )
-                                NavigationBarItem(
-                                    selected = tab == 1,
-                                    onClick = { tab = 1 },
-                                    icon = MiuixIcons.Settings,
-                                    label = "设置",
-                                )
-                                NavigationBarItem(
-                                    selected = tab == 2,
-                                    onClick = { tab = 2 },
-                                    icon = AboutCircleIcon,
-                                    label = "关于",
-                                )
-                            }
-                        }
-                    },
-                    containerColor = if (wallpaper != null) Color.Transparent
-                    else MiuixTheme.colorScheme.surface,
-                ) { padding ->
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        // 内容打上 backdrop 标记：Dock 的毛玻璃采样这里
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (dock && glassEnabled && glassSupported) {
-                                        Modifier.layerBackdrop(backdrop)
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        ) {
-                            // 切页给一点淡入 + 轻微上移，避免三个页面生硬地瞬间对调
-                            AnimatedContent(
-                                targetState = tab,
-                                transitionSpec = {
-                                    (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 26 })
-                                        .togetherWith(
-                                            fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it / 26 },
-                                        )
+                CompositionLocalProvider(LocalWallpaperActive provides (currentWallpaper != null)) {
+                    top.yukonga.miuix.kmp.basic.Scaffold(
+                        topBar = {
+                            SmallTopAppBar(
+                                title = when (tab) {
+                                    0 -> "广小课"
+                                    1 -> "设置"
+                                    else -> "关于"
                                 },
-                                label = "tab",
-                            ) { target ->
-                                // 各屏幕自己让开顶栏 / 底栏（只让一次）
-                                val contentPadding = PaddingValues(
-                                    top = padding.calculateTopPadding(),
-                                    bottom = padding.calculateBottomPadding() +
-                                        (if (dock) DOCK_RESERVED_HEIGHT else 0.dp),
-                                )
-                                when (target) {
-                                    0 -> HomeScreen(schedule, contentPadding) { importing = true }
+                                // 「广小课」下面这行小字
+                                subtitle = if (tab == 0) "天天开心" else "",
 
-                                    1 -> SettingsScreen(
-                                        contentPadding = contentPadding,
-                                        darkOverride = darkOverride,
-                                        onDarkOverrideChange = { v ->
-                                            darkOverride = v
-                                            Prefs.setDarkOverride(context, v)
-                                        },
-                                        dock = dock,
-                                        onDockChange = { v ->
-                                            dock = v
-                                            Prefs.setDockEnabled(context, v)
-                                        },
-                                        glass = glassEnabled,
-                                        onGlassChange = { v ->
-                                            glassEnabled = v
-                                            Prefs.setGlassEnabled(context, v)
-                                        },
-                                        hasWallpaper = wallpaper != null,
-                                        onWallpaperChanged = { wallpaperVersion++ },
-                                        onWallpaperTransform = { s, dx, dy ->
-                                            wpScale = s
-                                            wpOffsetX = dx
-                                            wpOffsetY = dy
-                                            Prefs.setWallpaperTransform(context, s, dx, dy)
-                                        },
+                                color = barSurface(),
+                            )
+                        },
+                        bottomBar = {
+                            if (!dock) {
+                                NavigationBar(
+                                    mode = NavigationBarDisplayMode.IconOnly,
+                                    color = barSurface(),
+                                ) {
+                                    NavigationBarItem(
+                                        selected = tab == 0,
+                                        onClick = { tab = 0 },
+                                        icon = MiuixIcons.Weeks,
+                                        label = "课表",
                                     )
+                                    NavigationBarItem(
+                                        selected = tab == 1,
+                                        onClick = { tab = 1 },
+                                        icon = MiuixIcons.Settings,
+                                        label = "设置",
+                                    )
+                                    NavigationBarItem(
+                                        selected = tab == 2,
+                                        onClick = { tab = 2 },
+                                        icon = AboutCircleIcon,
+                                        label = "关于",
+                                    )
+                                }
+                            }
+                        },
+                        containerColor = if (currentWallpaper != null) Color.Transparent
+                        else MiuixTheme.colorScheme.surface,
+                    ) { padding ->
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            // 内容打上 backdrop 标记：Dock 的毛玻璃采样这里
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(
+                                        if (dock && glassEnabled && glassSupported) {
+                                            Modifier.layerBackdrop(backdrop)
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                            ) {
+                                // 页面固定住：切页只做淡入淡出，不再上下滑动
+                                AnimatedContent(
+                                    targetState = tab,
+                                    transitionSpec = {
+                                        fadeIn(tween(220)).togetherWith(fadeOut(tween(120)))
+                                    },
+                                    label = "tab",
+                                ) { target ->
+                                    // 各屏幕自己让开顶栏 / 底栏（只让一次）
+                                    val contentPadding = PaddingValues(
+                                        top = padding.calculateTopPadding(),
+                                        bottom = padding.calculateBottomPadding() +
+                                            (if (dock) DOCK_RESERVED_HEIGHT else 0.dp),
+                                    )
+                                    when (target) {
+                                        0 -> HomeScreen(schedule, contentPadding) { importing = true }
 
-                                    else -> AboutScreen(contentPadding)
+                                        1 -> SettingsScreen(
+                                            contentPadding = contentPadding,
+                                            darkOverride = darkOverride,
+                                            onDarkOverrideChange = { v ->
+                                                darkOverride = v
+                                                Prefs.setDarkOverride(context, v)
+                                            },
+                                            dock = dock,
+                                            onDockChange = { v ->
+                                                dock = v
+                                                Prefs.setDockEnabled(context, v)
+                                            },
+                                            glass = glassEnabled,
+                                            onGlassChange = { v ->
+                                                glassEnabled = v
+                                                Prefs.setGlassEnabled(context, v)
+                                            },
+                                            hasWallpaper = currentWallpaper != null,
+                                            onWallpaperChanged = { wallpaperVersion++ },
+                                            onWallpaperTransform = { s, dx, dy ->
+                                                wpScale = s
+                                                wpOffsetX = dx
+                                                wpOffsetY = dy
+                                                Prefs.setWallpaperTransform(context, s, dx, dy)
+                                            },
+                                        )
+
+                                        else -> AboutScreen(contentPadding)
+                                    }
                                 }
                             }
                         }
-
-                        if (dock) {
-                            GxDock(
-                                items = dockItems,
-                                selectedIndex = tab,
-                                onSelect = { tab = it },
-                                backdrop = backdrop,
-                                glassOn = glassEnabled && glassSupported,
-                                modifier = Modifier
-                                    .align(androidx.compose.ui.Alignment.BottomCenter)
-                                    .padding(
-                                        bottom = if (navInset > 0.dp) 8.dp + navInset else 28.dp,
-                                    ),
-                            )
-                        }
                     }
                 }
-            }
 
-            // 首次打开时的说明弹窗（只弹一次）
-            if (showPrivacy) {
-                PrivacyDialog(onDismiss = {
-                    Prefs.setPrivacyShown(context, true)
-                    showPrivacy = false
-                })
+                // Dock 必须是采样层的兄弟节点（不能放进 layerBackdrop 标记的节点里），
+                // 否则玻璃采样包含自身的图层会自引用，RenderThread 直接段错误崩溃
+                if (dock) {
+                    GxDock(
+                        items = dockItems,
+                        selectedIndex = tab,
+                        onSelect = { tab = it },
+                        backdrop = backdrop,
+                        glassOn = glassEnabled && glassSupported,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(
+                                bottom = if (navInset > 0.dp) 8.dp + navInset else 28.dp,
+                            ),
+                    )
+                }
+
+                // 首次打开时的说明弹窗（只弹一次）
+                if (showPrivacy) {
+                    PrivacyDialog(onDismiss = {
+                        Prefs.setPrivacyShown(context, true)
+                        showPrivacy = false
+                    })
+                }
             }
         }
     }
