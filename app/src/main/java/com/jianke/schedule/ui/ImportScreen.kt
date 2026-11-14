@@ -28,6 +28,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -132,6 +134,8 @@ fun ImportScreen(
     // 连接层错误（超时/拒连/DNS）：非空时用友好提示页盖住 WebView 的原始英文报错
     var connectionError by remember { mutableStateOf<String?>(null) }
     var failedUrl by remember { mutableStateOf<String?>(null) }
+    // 「重试」会重建整个 WebView（旧的可能卡死在超时连接上），token 变化触发重建
+    var retryToken by remember { mutableIntStateOf(0) }
 
     fun inject(script: String, delayMs: Long = 0L) {
         if (scan.finished) return
@@ -535,9 +539,21 @@ fun ImportScreen(
                 }
             }
             Box(modifier = Modifier.fillMaxSize()) {
+                key(retryToken) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
+                        // 重试时先彻底销毁上一个 WebView：它可能还卡死在超时的连接上，
+                        // 原地 loadUrl 不一定恢复；整个网络栈重建才是可靠的「重来一次」
+                        webViewRef?.let { old ->
+                            runCatching {
+                                old.stopLoading()
+                                old.removeJavascriptInterface(ScheduleJs.BRIDGE_NAME)
+                                old.settings.javaScriptEnabled = false
+                                old.removeAllViews()
+                                old.destroy()
+                            }
+                        }
                         WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
@@ -716,6 +732,7 @@ fun ImportScreen(
                     }
                 },
                 )
+                }
                 // 连接层错误（超时/拒连/DNS）：盖住 WebView 的原始英文报错页，
                 // 给出人话原因和重试入口 —— 校外/维护期访问教务是会反复出现的场景
                 connectionError?.let { err ->
@@ -747,9 +764,8 @@ fun ImportScreen(
                         Button(
                             onClick = {
                                 connectionError = null
-                                val url = failedUrl ?: SchoolEndpoints.SSO_LOGIN
-                                scan.log("重试连接 " + url)
-                                webViewRef?.loadUrl(url)
+                                scan.log("重试：销毁并重建 WebView")
+                                retryToken++
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
