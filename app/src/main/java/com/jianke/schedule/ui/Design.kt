@@ -1,5 +1,15 @@
 package com.jianke.schedule.ui
 
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -339,19 +350,40 @@ fun SegmentedTabs(
     ) {
         tabs.forEachIndexed { index, label ->
             val selected = index == selectedIndex
+            // 选中态的底色 / 描边 / 文字色都走补间：胶囊平滑地「长」进新选项，
+            // 而不是硬切换（与页面过渡的柔和节奏一致）
+            val bg by animateColorAsState(
+                targetValue = if (selected) colors.primary else Color.Transparent,
+                animationSpec = tween(200, easing = LinearOutSlowInEasing),
+                label = "segBg",
+            )
+            val borderAlpha by animateFloatAsState(
+                targetValue = if (selected) 0f else 0.5f,
+                animationSpec = tween(200),
+                label = "segBorder",
+            )
+            val fg by animateColorAsState(
+                targetValue = if (selected) colors.onPrimary else colors.onBackgroundVariant,
+                animationSpec = tween(200),
+                label = "segFg",
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .heightIn(min = 44.dp)
                     .clip(shape)
-                    .background(if (selected) colors.primary else Color.Transparent)
+                    .background(bg)
                     .then(
-                        if (selected) Modifier else Modifier.border(
-                            width = 1.dp,
-                            color = colors.onBackgroundVariant.copy(alpha = 0.5f),
-                            shape = shape,
-                        ),
+                        if (borderAlpha > 0.01f) {
+                            Modifier.border(
+                                width = 1.dp,
+                                color = colors.onBackgroundVariant.copy(alpha = borderAlpha),
+                                shape = shape,
+                            )
+                        } else {
+                            Modifier
+                        },
                     )
                     .selectable(
                         selected = selected,
@@ -367,7 +399,7 @@ fun SegmentedTabs(
                     lineHeight = 22.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
-                    color = if (selected) colors.onPrimary else colors.onBackgroundVariant,
+                    color = fg,
                 )
             }
         }
@@ -376,3 +408,21 @@ fun SegmentedTabs(
 
 /** 模块之间的间距。 */
 private val SEGMENT_GAP = 8.dp
+
+/**
+ * 页面 / 模块切换的统一过渡：先淡出（160ms）再淡入（延迟 70ms、280ms 减速 + 1/24 屏上移）。
+ *
+ * 入场延迟让旧内容先退让出一段背景再进来，避免两张全屏内容半透明互透的鬼影；
+ * 主界面三屏与课表页三个模块共用这一套，切换观感全应用一致。
+ */
+fun screenTransition(): ContentTransform = (
+    fadeIn(
+        tween(280, delayMillis = 70, easing = LinearOutSlowInEasing),
+    ) +
+        slideInVertically(
+            animationSpec = tween(280, delayMillis = 70, easing = LinearOutSlowInEasing),
+            initialOffsetY = { it / 24 },
+        )
+    ).togetherWith(
+    fadeOut(tween(160, easing = FastOutLinearInEasing)),
+)

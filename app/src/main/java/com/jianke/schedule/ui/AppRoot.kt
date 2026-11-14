@@ -7,7 +7,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
@@ -227,30 +226,11 @@ fun AppRoot() {
                                         },
                                     ),
                             ) {
-                                // 页面固定住：切页做「先淡出、再淡入」的交错过渡，不再上下滑动。
-                                // 旧实现两屏同时互透（220ms/120ms），深色主题下两张全屏内容
-                                // 半透明叠加，看起来像鬼影一闪。这里入场延迟 70ms 等旧屏
-                                // 基本退场再进来，过渡走背景而不是叠影；加 1/24 屏的上移，
-                                // 动效有方向感，节奏是先收后放才自然。
+                                // 页面固定住：切页走统一过渡 screenTransition（先淡出再淡入 + 上移），
+                                // 与课表页三个模块的切换保持同一节奏，不再上下滑动。
                                 AnimatedContent(
                                     targetState = tab,
-                                    transitionSpec = {
-                                        (
-                                            fadeIn(
-                                                tween(280, delayMillis = 70, easing = LinearOutSlowInEasing),
-                                            ) +
-                                                slideInVertically(
-                                                    animationSpec = tween(
-                                                        280,
-                                                        delayMillis = 70,
-                                                        easing = LinearOutSlowInEasing,
-                                                    ),
-                                                    initialOffsetY = { it / 24 },
-                                                )
-                                            ).togetherWith(
-                                            fadeOut(tween(160, easing = FastOutLinearInEasing)),
-                                        )
-                                    },
+                                    transitionSpec = { screenTransition() },
                                     label = "tab",
                                 ) { target ->
                                     // 各屏幕自己让开顶栏 / 底栏（只让一次）

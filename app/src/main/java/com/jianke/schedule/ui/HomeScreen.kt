@@ -134,82 +134,91 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
         } else {
             ModeTabs(tab = tab, onTabChange = { tab = it })
             StaleHint(updatedAt = schedule.updatedAt, onImport = onImport)
-            if (tab == MODE_WEEK) {
-                val shownWeek = pagerState.currentPage + 1
-                val dates = weekDatesOf(schedule.semester.startDate, shownWeek)
-                val weekCourses = schedule.coursesOfWeek(shownWeek)
-                WeekNavBar(
-                    week = shownWeek,
-                    totalWeeks = totalWeeks,
-                    isCurrent = shownWeek == currentWeek,
-                    dateRange = dateRangeOf(dates),
-                    courseCount = weekCourses.size,
-                    onPrev = {
-                        scope.launch {
-                            pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0))
-                        }
-                    },
-                    onNext = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(
-                                (pagerState.currentPage + 1).coerceAtMost(totalWeeks - 1),
+            // 三个模块与主页面三屏共用同一套过渡（screenTransition）：
+            // 先淡出再淡入 + 轻微上移，模块切换不再硬切
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = { screenTransition() },
+                modifier = Modifier.weight(1f),
+                label = "homeMode",
+            ) { mode ->
+                when (mode) {
+                    MODE_WEEK -> Column(modifier = Modifier.fillMaxSize()) {
+                        val shownWeek = pagerState.currentPage + 1
+                        val dates = weekDatesOf(schedule.semester.startDate, shownWeek)
+                        val weekCourses = schedule.coursesOfWeek(shownWeek)
+                        WeekNavBar(
+                            week = shownWeek,
+                            totalWeeks = totalWeeks,
+                            isCurrent = shownWeek == currentWeek,
+                            dateRange = dateRangeOf(dates),
+                            courseCount = weekCourses.size,
+                            onPrev = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0))
+                                }
+                            },
+                            onNext = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(
+                                        (pagerState.currentPage + 1).coerceAtMost(totalWeeks - 1),
+                                    )
+                                }
+                            },
+                            onToday = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage((currentWeek - 1).coerceIn(0, totalWeeks - 1))
+                                }
+                            },
+                        )
+                        DayHeader(dates = dates, isCurrentWeek = shownWeek == currentWeek)
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                // 周视图格子不让它钻进 Dock 底下（课不被玻璃压住）
+                                .padding(bottom = contentPadding.calculateBottomPadding()),
+                        ) { page ->
+                            WeekGrid(
+                                courses = schedule.coursesOfWeek(page + 1),
+                                todayIndex = if (page + 1 == currentWeek) {
+                                    LocalDate.now().dayOfWeek.value - 1
+                                } else {
+                                    -1
+                                },
+                                highlight = if (detailVisible) selectedCourse else null,
+                                onCourseClick = { course, rect ->
+                                    val now = System.currentTimeMillis()
+                                    // 浮层是独立窗口：点外面时它会先被关掉，这一次触摸就不能再当成
+                                    // 「点课程」而把浮层又打开（否则同一个位置会反复弹）。
+                                    if (now - lastDismissAt < 320L) {
+                                        lastDismissAt = 0L
+                                    } else if (selectedCourse == course && detailVisible) {
+                                        // 再点同一门课：浮窗播放收起动画
+                                        detailVisible = false
+                                    } else {
+                                        selectedCourse = course
+                                        anchorRect = rect
+                                        detailVisible = true
+                                    }
+                                },
                             )
                         }
-                    },
-                    onToday = {
-                        scope.launch {
-                            pagerState.animateScrollToPage((currentWeek - 1).coerceIn(0, totalWeeks - 1))
-                        }
-                    },
-                )
-                DayHeader(dates = dates, isCurrentWeek = shownWeek == currentWeek)
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        // 周视图格子不让它钻进 Dock 底下（课不被玻璃压住）
-                        .padding(bottom = contentPadding.calculateBottomPadding()),
-                ) { page ->
-                    WeekGrid(
-                        courses = schedule.coursesOfWeek(page + 1),
-                        todayIndex = if (page + 1 == currentWeek) {
-                            LocalDate.now().dayOfWeek.value - 1
-                        } else {
-                            -1
-                        },
-                        highlight = if (detailVisible) selectedCourse else null,
-                        onCourseClick = { course, rect ->
-                            val now = System.currentTimeMillis()
-                            // 浮层是独立窗口：点外面时它会先被关掉，这一次触摸就不能再当成
-                            // 「点课程」而把浮层又打开（否则同一个位置会反复弹）。
-                            if (now - lastDismissAt < 320L) {
-                                lastDismissAt = 0L
-                            } else if (selectedCourse == course && detailVisible) {
-                                // 再点同一门课：浮窗播放收起动画
-                                detailVisible = false
-                            } else {
-                                selectedCourse = course
-                                anchorRect = rect
-                                detailVisible = true
-                            }
-                        },
+                    }
+                    MODE_TODAY -> TodayTimeline(
+                        schedule = schedule,
+                        week = currentWeek,
+                        bottomPad = contentPadding.calculateBottomPadding(),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    else -> UpdatePage(
+                        updatedAt = schedule.updatedAt,
+                        onImport = onImport,
+                        bottomPad = contentPadding.calculateBottomPadding(),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
-            } else if (tab == MODE_TODAY) {
-                TodayTimeline(
-                    schedule = schedule,
-                    week = currentWeek,
-                    bottomPad = contentPadding.calculateBottomPadding(),
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                UpdatePage(
-                    updatedAt = schedule.updatedAt,
-                    onImport = onImport,
-                    bottomPad = contentPadding.calculateBottomPadding(),
-                    modifier = Modifier.weight(1f),
-                )
             }
         }
     }
