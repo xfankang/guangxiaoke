@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +24,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -50,6 +53,15 @@ fun EasterEggDialog(onDismiss: () -> Unit) {
             bitmap = EasterEgg.load(context)
             source = EasterEgg.resolvedSource(context)
         }
+    }
+
+    // 去掉 Dialog 默认的变暗遮罩：彩蛋直接浮在页面上，不做压暗；关闭时还原
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        val original = window?.attributes?.dimAmount ?: 0f
+        window?.setDimAmount(0f)
+        onDispose { window?.setDimAmount(original) }
     }
 
     Dialog(onDismissRequest = onDismiss) {

@@ -230,11 +230,16 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
         ) {
             AnimatedVisibility(
                 visible = detailVisible,
+                // 弹出：从格子尺度弹性放大（轻微过冲更有「弹出」感）+ 淡入
                 enter = scaleIn(
-                    initialScale = 0.86f,
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 380f),
-                ) + fadeIn(tween(150)),
-                exit = scaleOut(targetScale = 0.92f, animationSpec = tween(140)) + fadeOut(tween(140)),
+                    initialScale = 0.7f,
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 320f),
+                ) + fadeIn(tween(180)),
+                // 收起：明显缩小淡出，与弹出幅度对齐
+                exit = scaleOut(
+                    targetScale = 0.78f,
+                    animationSpec = tween(170),
+                ) + fadeOut(tween(160)),
             ) {
                 Card(
                     modifier = Modifier.width(266.dp),
@@ -246,10 +251,10 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
             }
         }
 
-        // 收起动画播完后移除浮层（140ms 动画 + 余量）
+        // 收起动画播完后移除浮层（~330ms 动画 + 余量）
         LaunchedEffect(detailVisible) {
             if (!detailVisible) {
-                delay(160)
+                delay(220)
                 if (!detailVisible) selectedCourse = null
             }
         }
