@@ -59,12 +59,20 @@ private const val PHASE_API = 0
 private const val PHASE_FAST = 1
 private const val PHASE_SLOW = 2
 
-private class ScanState {
+private class ScanState(private val context: Context) {
     val startedAt = android.os.SystemClock.elapsedRealtime()
 
-    /** 打点：导入全链路各阶段耗时，logcat 过滤 GxkImport 可见 */
+    /**
+     * 打点：导入全链路各阶段耗时，追加到 import_debug/timing.txt。
+     * 不用 logcat —— MIUI 默认抑制应用日志（缓冲区直接为空），落文件才可靠。
+     */
     fun log(stage: String) {
-        android.util.Log.d("GxkImport", "t=" + (android.os.SystemClock.elapsedRealtime() - startedAt) + "ms " + stage)
+        val line = "t=" + (android.os.SystemClock.elapsedRealtime() - startedAt) + "ms  " + stage
+        android.util.Log.i("GxkImport", line)
+        runCatching {
+            val dir = java.io.File(context.filesDir, "import_debug").apply { mkdirs() }
+            java.io.File(dir, "timing.txt").appendText(line + "\n")
+        }
     }
 
     var phase = PHASE_API
@@ -113,7 +121,7 @@ fun ImportScreen(
     var apiReport by remember { mutableStateOf<String?>(null) }
     var apiProbeRaw by remember { mutableStateOf<String?>(null) }
     var importedCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
-    val scan = remember { ScanState() }
+    val scan = remember { ScanState(context) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
