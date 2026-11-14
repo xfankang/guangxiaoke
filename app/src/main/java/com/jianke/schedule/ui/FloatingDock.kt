@@ -1,157 +1,64 @@
 package com.jianke.schedule.ui
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.chrisbanes.haze.HazeState
+import com.jianke.schedule.ui.component.FloatingBottomBar
+import com.jianke.schedule.ui.component.FloatingBottomBarItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.blur.Backdrop
 
 data class DockItem(val icon: ImageVector, val label: String)
 
-private val DOCK_HEIGHT = 68.dp
-private val DOCK_INNER_PADDING = 5.dp
-
 /**
- * 悬浮 Dock 栏（KSU 风格的滑动指示器）。
+ * 悬浮 Dock 栏：KSU 管理器同款液态玻璃（Miuix blur 折射 + 高光，见 component/liquid）。
  *
- * 选中的那格背后有一块高亮滑块，切换时用弹簧动画滑过去（不是直接跳），
- * 图标本身同时做颜色渐变 + 轻微放大。配色、圆角、Icon 都用 Miuix 的。
+ * - [glassOn] = true：毛玻璃 + 折射（API 33+ 完整折射，31~32 只有模糊，30 以下实色回退）
+ * - [glassOn] = false：实色 Dock（无玻璃），观感与经典底栏一致
  *
- * 原来 66dp 高的胶囊里只放了一个 26dp 图标、没有文字，看着又高又空；
- * 现在图标下面补上标签，选中态也加了描边，在浅色壁纸上不会糊掉。
- *
- * 液态玻璃开启时整条 Dock 换成玻璃材质（半透明染色 + 高光描边 +
- * Android 12+ 背景实时模糊）；关闭时保持原来的实色。
+ * [backdrop] 是被标记为 layerBackdrop 的内容层 —— Dock 的毛玻璃采样它，
+ * 滚动内容从 Dock 下面穿过时会实时折射。
  */
 @Composable
-fun FloatingDock(
+fun GxDock(
     items: List<DockItem>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    backdrop: Backdrop,
+    glassOn: Boolean,
     modifier: Modifier = Modifier,
-    hazeState: HazeState? = null,
 ) {
-    if (items.isEmpty()) return
-    val shape = RoundedCornerShape(DOCK_HEIGHT / 2)
-    val surface = MiuixTheme.colorScheme.surfaceContainer
-    val glassOn = LocalGlass.current.enabled
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(DOCK_HEIGHT)
-            .then(
-                if (glassOn) {
-                    Modifier.glassBar(hazeState, shape)
-                } else {
-                    Modifier
-                        .shadow(elevation = 10.dp, shape = shape, clip = false)
-                        .clip(shape)
-                        .background(
-                            if (LocalWallpaperActive.current) surface.copy(alpha = Ui.Scrim) else surface,
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = MiuixTheme.colorScheme.outline.copy(alpha = 0.10f),
-                            shape = shape,
-                        )
-                },
-            )
-            .padding(DOCK_INNER_PADDING),
-    ) {
-        val itemWidth = maxWidth / items.size
-        val animatedIndex by animateFloatAsState(
-            targetValue = selectedIndex.toFloat(),
-            animationSpec = spring(dampingRatio = 0.72f, stiffness = 420f),
-            label = "dockIndicator",
-        )
-        // 滑动高亮块：点按切换时用弹簧动画滑过去
-        Box(
-            modifier = Modifier
-                .offset(x = itemWidth * animatedIndex)
-                .width(itemWidth)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape((DOCK_HEIGHT - DOCK_INNER_PADDING * 2) / 2))
-                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)),
-        )
-
-        Row(modifier = Modifier.fillMaxSize()) {
-            items.forEachIndexed { index, item ->
-                val selected = index == selectedIndex
-                val tint by animateColorAsState(
-                    targetValue = if (selected) {
-                        MiuixTheme.colorScheme.primary
-                    } else {
-                        MiuixTheme.colorScheme.onSurfaceContainer.copy(alpha = 0.50f)
-                    },
-                    label = "dockTint",
+    FloatingBottomBar(
+        modifier = modifier,
+        selectedIndex = selectedIndex,
+        onSelected = onSelect,
+        backdrop = backdrop,
+        tabsCount = items.size,
+        isBlurEnabled = glassOn,
+    ) { activate ->
+        items.forEachIndexed { index, item ->
+            FloatingBottomBarItem(
+                selected = selectedIndex == index,
+                onClick = { activate(index) },
+                modifier = Modifier.defaultMinSize(minWidth = 76.dp),
+            ) {
+                Icon(
+                    imageVector = item.icon,
+                    contentDescription = item.label,
                 )
-                val iconScale by animateFloatAsState(
-                    targetValue = if (selected) 1.12f else 1f,
-                    animationSpec = spring(dampingRatio = 0.6f, stiffness = 500f),
-                    label = "dockScale",
+                Text(
+                    text = item.label,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible,
                 )
-                val interaction = remember { MutableInteractionSource() }
-                Box(
-                    modifier = Modifier
-                        .width(itemWidth)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape((DOCK_HEIGHT - DOCK_INNER_PADDING * 2) / 2))
-                        .clickable(
-                            interactionSource = interaction,
-                            indication = null,
-                        ) { onSelect(index) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = item.icon,
-                            contentDescription = item.label,
-                            modifier = Modifier
-                                .size(23.dp)
-                                .scale(iconScale),
-                            tint = tint,
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        // 标签用跟图标同一支 tint，选中时一起变主题色
-                        Text(
-                            text = item.label,
-                            fontSize = 10.sp,
-                            lineHeight = 12.sp,
-                            color = tint,
-                        )
-                    }
-                }
             }
         }
     }

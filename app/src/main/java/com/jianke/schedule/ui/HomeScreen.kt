@@ -58,6 +58,8 @@ import com.jianke.schedule.data.schoolLessonTimes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -210,7 +212,7 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
             // 不会「穿透」到底下的课程格子又把它点开。
             properties = PopupProperties(focusable = true),
         ) {
-            GlassCard(
+            Card(
                 modifier = Modifier.width(266.dp),
                 cornerRadius = 18.dp,
                 insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
@@ -263,7 +265,6 @@ private fun UpdatePage(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .glassLayer(RoundedCornerShape(Ui.CardCorner))
                 .clip(RoundedCornerShape(Ui.CardCorner))
                 .background(Color(0xFFE53935).copy(alpha = 0.14f))
                 .padding(16.dp),
@@ -498,7 +499,6 @@ private fun StaleHint(updatedAt: Long, onImport: () -> Unit) {
             .padding(horizontal = Ui.Page)
             .padding(bottom = 8.dp)
             .clip(RoundedCornerShape(Ui.CardCorner))
-            .glassLayer(RoundedCornerShape(Ui.CardCorner))
             .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.12f))
             .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -957,12 +957,14 @@ private fun TodayCourseRow(
                 ),
         )
         Spacer(Modifier.width(12.dp))
-        GlassCard(
+        Card(
             modifier = Modifier.weight(1f),
             cornerRadius = 14.dp,
             insideMargin = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-            container = cardFill,
-            contentColor = ink.primary,
+            colors = CardDefaults.defaultColors(
+                color = cardFill,
+                contentColor = ink.primary,
+            ),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

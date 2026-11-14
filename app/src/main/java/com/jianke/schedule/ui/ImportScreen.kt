@@ -46,6 +46,7 @@ import com.jianke.schedule.web.ApiProbeJs
 import com.jianke.schedule.web.ScheduleJs
 import com.jianke.schedule.web.SchoolEndpoints
 import org.json.JSONObject
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -59,6 +60,13 @@ private const val PHASE_FAST = 1
 private const val PHASE_SLOW = 2
 
 private class ScanState {
+    val startedAt = android.os.SystemClock.elapsedRealtime()
+
+    /** 打点：导入全链路各阶段耗时，logcat 过滤 GxkImport 可见 */
+    fun log(stage: String) {
+        android.util.Log.d("GxkImport", "t=" + (android.os.SystemClock.elapsedRealtime() - startedAt) + "ms " + stage)
+    }
+
     var phase = PHASE_API
     var apiTried = false
     var fastInjected = false
@@ -68,6 +76,7 @@ private class ScanState {
     var finished = false
     var lastBody = ""
     var tableRequested = false
+    var fastPath = false
     var lastWeek = -1
     var backward = false
 }
@@ -381,7 +390,7 @@ fun ImportScreen(
                 .padding(padding),
         ) {
             if (importedCount > 0) {
-                GlassCard(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Ui.Page)
@@ -441,7 +450,7 @@ fun ImportScreen(
             }
             val apiNote = apiReport
             if (apiNote != null) {
-                GlassCard(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Ui.Page)
@@ -469,7 +478,7 @@ fun ImportScreen(
             }
             val failed = failure
             if (failed != null) {
-                GlassCard(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Ui.Page)
@@ -503,7 +512,8 @@ fun ImportScreen(
                         settings.domStorageEnabled = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
-                        settings.cacheMode = WebSettings.LOAD_NO_CACHE
+                        // 静态资源（CSS/JS）走 HTTP 缓存协商：每次更新的整页加载明显提速，页面内容仍不带缓存
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
                         settings.javaScriptCanOpenWindowsAutomatically = false
                         settings.setSupportMultipleWindows(false)
                         settings.allowFileAccess = false
@@ -534,8 +544,34 @@ fun ImportScreen(
                                 return true
                             }
 
+                            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                                super.doUpdateVisitedHistory(view, url, isReload)
+                                if (scan.finished || scan.fastPath || scan.tableRequested) return
+                                // 教务会话刚建立（SSO 回跳落地教务域）：立刻进课表页，
+                                // 不等教务首页整页渲染完 —— 省一次完整页面加载
+                                if (SchoolEndpoints.isCourseSystemUrl(url)
+                                    && url.contains("/jwglxt/")
+                                    && !url.contains("login_slogin")
+                                ) {
+                                    scan.tableRequested = true
+                                    status = "登录成功，正在打开课表…"
+                                    scan.log("提前跳转课表页")
+                                    view.loadUrl(SchoolEndpoints.COURSE_TABLE)
+                                }
+                            }
+
                             override fun onPageFinished(view: WebView, url: String) {
                                 if (scan.finished) return
+                                scan.log("页面加载完成 " + url)
+                                // 快速路径被踢回登录 / CAS：教务会话已失效，回退常规 SSO 流程
+                                if (scan.fastPath && !url.contains("xskbcxMobile")) {
+                                    scan.fastPath = false
+                                    scan.tableRequested = false
+                                    status = "登录会话已过期，请重新登录…"
+                                    scan.log("快速路径会话失效，回退统一身份认证")
+                                    view.loadUrl(SchoolEndpoints.SSO_LOGIN)
+                                    return
+                                }
                                 if (!SchoolEndpoints.isTrustedUrl(url)) {
                                     scan.tableRequested = false
                                     return
@@ -594,7 +630,23 @@ fun ImportScreen(
                             }
                         }
                         webViewRef = this
-                        loadUrl(SchoolEndpoints.SSO_LOGIN)
+                        // 会话快速路径：教务域的会话 Cookie 还在就直接进课表页，
+                        // 跳过整条 SSO 跳转链（统一认证 → 回跳 → 教务首页）；
+                        // 会话失效时课表页会被踢回登录页，onPageFinished 里自动回退 SSO 流程
+                        val jwCookie = runCatching {
+                            android.webkit.CookieManager.getInstance().getCookie(SchoolEndpoints.JW_URL)
+                        }.getOrNull()
+                        scan.log("webview 就绪，jw cookie " + (if (jwCookie != null) "存在" else "不存在"))
+                        if (jwCookie != null) {
+                            scan.fastPath = true
+                            scan.tableRequested = true
+                            status = "登录会话仍有效，正在打开课表…"
+                            scan.log("快速路径：直接进课表页")
+                            loadUrl(SchoolEndpoints.COURSE_TABLE)
+                        } else {
+                            scan.log("常规路径：打开统一身份认证")
+                            loadUrl(SchoolEndpoints.SSO_LOGIN)
+                        }
                     }
                 },
             )

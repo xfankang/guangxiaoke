@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jianke.schedule.BuildConfig
 import com.jianke.schedule.R
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -116,7 +117,7 @@ fun AboutScreen(contentPadding: PaddingValues) {
 /** 顶部应用信息卡：图标、名称、版本，以及那句红字提醒。 */
 @Composable
 private fun AppInfoCard() {
-    GlassCard(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 2.dp),
@@ -168,7 +169,7 @@ private fun StretchCreditCard(
     items: List<Pair<String, String>>,
     modifier: Modifier = Modifier,
 ) {
-    GlassCard(
+    Card(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = Ui.CardCorner,
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -192,7 +193,7 @@ private fun StretchCreditCard(
 /** 自然高度卡片：大字号时用，行按自身内容排版，整页可滚动。 */
 @Composable
 private fun NaturalCreditCard(items: List<Pair<String, String>>) {
-    GlassCard(
+    Card(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = Ui.CardCorner,
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 2.dp),

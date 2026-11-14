@@ -26,6 +26,7 @@ import com.jianke.schedule.data.Wallpaper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
@@ -143,13 +144,20 @@ fun SettingsScreen(
             Spacer(Modifier.height(6.dp))
         }
 
-        // 液态玻璃总开关：毛玻璃染色 + 高光描边；Android 12+ 叠加内容穿底实时模糊
+        // 液态玻璃开关：只作用于 Dock 的玻璃质感；关闭回退经典实色底栏
         SettingsCard {
             SettingRow(
                 icon = MiuixIcons.Background,
                 title = "液态玻璃",
-                summary = "毛玻璃与高光质感；Android 12+ 支持背景实时模糊",
+                summary = "Dock 栏液态玻璃质感；关闭为经典实色底栏",
                 trailing = { Switch(checked = glass, onCheckedChange = onGlassChange) },
+            )
+            // 小字提醒：老设备性能不足时用户可自行关闭
+            Text(
+                text = "低性能设备如感觉卡顿，可关闭此效果",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                modifier = Modifier.padding(start = 62.dp, bottom = 10.dp),
             )
         }
 
@@ -277,7 +285,7 @@ private fun SectionHeader(text: String) {
 /** 设置页统一用的卡片：玻璃开关打开时为液态玻璃材质，关闭时为经典 Miuix 卡片。 */
 @Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
-    GlassCard(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Ui.Page)

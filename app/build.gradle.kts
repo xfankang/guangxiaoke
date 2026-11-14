@@ -26,8 +26,8 @@ android {
         minSdk = 30
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 28
-        versionName = "3.9.1"
+        versionCode = 29
+        versionName = "4.0.0"
     }
 
     signingConfigs {
@@ -93,7 +93,7 @@ dependencies {
     implementation(libs.miuix.preference)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.haze)
+    implementation(libs.miuix.blur)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

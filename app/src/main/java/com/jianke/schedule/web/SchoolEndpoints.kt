@@ -19,6 +19,9 @@ object SchoolEndpoints {
     const val LOCAL_LOGIN = "http://jw.gzist.edu.cn/jwglxt/xtgl/login_slogin.html"
 
     const val JW_HOST = "jw.gzist.edu.cn"
+
+    /** 教务根地址（导入会话快速路径的 Cookie 判断用）。 */
+    const val JW_URL = "http://jw.gzist.edu.cn"
     private const val IDS_HOST = "ids.gzist.edu.cn"
 
     const val COURSE_TABLE =

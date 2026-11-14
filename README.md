@@ -104,6 +104,13 @@ app/src/main/java/com/jianke/schedule/
 | xxl | 测试 |
 | xfankang | 作者 |
 
+## 许可与致谢补充
+
+- Dock 栏液态玻璃效果移植自 [KernelSU 管理器](https://github.com/tiann/KernelSU)
+  （GPL-3.0，`ui/component/liquid` 与 `FloatingBottomBar`，文件头已注明），
+  其折射着色器源自 [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)
+  （Apache 2.0）。因此本项目整体以 GPL-3.0 发布。
+
 ## 更新日志
 
 见 [CHANGELOG.md](CHANGELOG.md)。
