@@ -7,10 +7,14 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -124,6 +129,9 @@ fun ImportScreen(
     val scan = remember { ScanState(context) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    // 连接层错误（超时/拒连/DNS）：非空时用友好提示页盖住 WebView 的原始英文报错
+    var connectionError by remember { mutableStateOf<String?>(null) }
+    var failedUrl by remember { mutableStateOf<String?>(null) }
 
     fun inject(script: String, delayMs: Long = 0L) {
         if (scan.finished) return
@@ -526,10 +534,11 @@ fun ImportScreen(
                     )
                 }
             }
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    WebView(ctx).apply {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.loadWithOverviewMode = true
@@ -584,8 +593,28 @@ fun ImportScreen(
                                 }
                             }
 
+                            override fun onReceivedError(
+                                view: WebView,
+                                request: WebResourceRequest,
+                                error: WebResourceError,
+                            ) {
+                                super.onReceivedError(view, request, error)
+                                // 只处理主框架的连接层错误（超时/拒连/DNS）；子资源失败不影响页面
+                                if (scan.finished || !request.isForMainFrame) return
+                                mainHandler.post {
+                                    if (scan.finished) return@post
+                                    val desc = error.description?.toString().orEmpty().ifBlank { "网络错误" }
+                                    connectionError = desc
+                                    failedUrl = request.url.toString()
+                                    scan.log("网络错误 " + desc + "  " + request.url)
+                                }
+                            }
+
                             override fun onPageFinished(view: WebView, url: String) {
                                 if (scan.finished) return
+                                // 错误页自身的加载完成不算恢复（url 与失败地址一致时保留提示）；
+                                // 状态只在「重试」入口清掉——重试成功后不会重新触发 onReceivedError
+                                if (connectionError != null && url != failedUrl) connectionError = null
                                 scan.log("页面加载完成 " + url)
                                 // 快速路径被踢回登录 / CAS：教务会话已失效，回退常规 SSO 流程
                                 if (scan.fastPath && !url.contains("xskbcxMobile")) {
@@ -686,7 +715,51 @@ fun ImportScreen(
                         }
                     }
                 },
-            )
+                )
+                // 连接层错误（超时/拒连/DNS）：盖住 WebView 的原始英文报错页，
+                // 给出人话原因和重试入口 —— 校外/维护期访问教务是会反复出现的场景
+                connectionError?.let { err ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MiuixTheme.colorScheme.surface)
+                            .padding(horizontal = Ui.Page + 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(text = "学校服务器暂时连不上", style = MiuixTheme.textStyles.title3)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "可能是不在校园网内、学校正在维护，或当前运营商到学校网络不通。" +
+                                "试试连校园网 WiFi、换一种网络，或稍后再试。",
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onBackgroundVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = err,
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onBackgroundVariant,
+                            modifier = Modifier.heightIn(max = 64.dp),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                connectionError = null
+                                val url = failedUrl ?: SchoolEndpoints.SSO_LOGIN
+                                scan.log("重试连接 " + url)
+                                webViewRef?.loadUrl(url)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(text = "重试", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(text = "取消导入", onClick = onCancel, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
         }
     }
 }

@@ -28,16 +28,16 @@ class WeekLayoutTest {
         assertEquals(1, rowIndexOf(4))
         assertEquals(2, rowIndexOf(5))
         assertEquals(4, rowIndexOf(10))
-        // 晚上第二节课（学校作息 20:20-21:40）
-        assertEquals(5, rowIndexOf(11))
-        assertEquals(5, rowIndexOf(12))
+        // 学校 20:20 后不排课：11/12 节没有自己的行，脏数据夹进最后一行
+        assertEquals(4, rowIndexOf(11))
+        assertEquals(4, rowIndexOf(12))
     }
 
     @Test
     fun 越界小节夹到最近的一行() {
         // 解析层允许脏数据（q 到 15、节次到 20）；落回第 0 行会压住 1-2 节的课
-        assertEquals(5, rowIndexOf(13))
-        assertEquals(5, rowIndexOf(20))
+        assertEquals(4, rowIndexOf(13))
+        assertEquals(4, rowIndexOf(20))
         assertEquals(0, rowIndexOf(0))
         assertEquals(0, rowIndexOf(-3))
     }
