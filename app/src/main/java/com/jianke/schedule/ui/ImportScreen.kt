@@ -307,7 +307,10 @@ fun ImportScreen(
             status = "已读取 " + scan.byWeek.size + " 周（第 " + weekLabel + " 周）…"
         }
         val stuck = scan.stale >= 2
-        val reachedStart = scan.backward && week in 1..2
+        // 回扫必须真正录到第 1 周才算到头：旧判定「到第 2 周就收尾」会让第 1 周的课
+        // 系统性缺失（正向扫描从当前周出发永远不经过第 1 周）。
+        // 在第 1 周点「<」若页面翻不动，stale ≥ 2 会安全收尾，不会死循环。
+        val reachedStart = scan.backward && week <= 1
         when {
             reachedStart || scan.iterations >= MAX_WEEKS * 2 -> finishWithWeekMap()
             stuck && !scan.backward -> {
@@ -599,14 +602,19 @@ fun ImportScreen(
                                     scan.tableRequested = false
                                     return
                                 }
-                                if (url.contains("login_slogin")) {
-                                    scan.tableRequested = false
-                                    status = "这里是教务本地登录；普通学生请用统一身份认证"
-                                    return
-                                }
                                 if (!SchoolEndpoints.isCourseSystemUrl(url) || url.contains("/sso/")) {
+                                    // 任何落到教务域之外的页面（CAS 重认证等）都可能需要图片
+                                    //（验证码）：确保图片加载是开的
+                                    view.settings.loadsImagesAutomatically = true
                                     scan.tableRequested = false
                                     status = "请用学号和密码登录统一身份认证"
+                                    return
+                                }
+                                if (url.contains("login_slogin")) {
+                                    scan.tableRequested = false
+                                    // 教务本地登录页同样可能有验证码图：确保图片是开的
+                                    view.settings.loadsImagesAutomatically = true
+                                    status = "这里是教务本地登录；普通学生请用统一身份认证"
                                     return
                                 }
                                 if (!url.contains("/jwglxt/")) {

@@ -84,7 +84,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
-private const val ROW_COUNT = 5
+private val ROW_COUNT = schoolBigPeriods.size
 private const val MODE_WEEK = 0
 private const val MODE_TODAY = 1
 private const val MODE_UPDATE = 2
@@ -105,7 +105,12 @@ const val UPDATE_WARNING = "由于无法实现实时更新课表，为了防止�
 fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () -> Unit) {
     var tab by remember { mutableIntStateOf(MODE_WEEK) }
     val totalWeeks = (schedule?.semester?.totalWeeks ?: 1).coerceAtLeast(1)
-    val currentWeek = remember(schedule) { schedule?.let { ScheduleWeek.currentWeekOf(it) } ?: 1 }
+    // 当前周每天重算一次：进程跨周日午夜存活时（schedule 对象没变）也要翻到新的一周，
+    // 否则「今日课程」还停留在上周的课，而日期高亮用的是新鲜的今天 —— 两套时间源打架
+    val todayEpochDay = LocalDate.now().toEpochDay()
+    val currentWeek = remember(schedule, todayEpochDay) {
+        schedule?.let { ScheduleWeek.currentWeekOf(it, LocalDate.now()) } ?: 1
+    }
     val pagerState = rememberPagerState(
         initialPage = (currentWeek - 1).coerceIn(0, totalWeeks - 1),
     ) { totalWeeks }

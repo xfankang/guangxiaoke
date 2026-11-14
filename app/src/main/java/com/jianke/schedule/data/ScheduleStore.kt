@@ -20,7 +20,11 @@ object ScheduleStore {
 
     fun load(context: Context): Schedule? {
         val f = file(context)
-        if (!f.exists()) return null
+        // AtomicFile 写入时会把 base 改名为 .bak 再写 .new：进程若死在写入中途，
+        // base 不在但 .bak 里是完整的旧课表。这里不能因 base 缺失就提前返回——
+        // 要交给 AtomicFile.openRead 走它的 .bak 还原逻辑。
+        val bakExists = File(context.filesDir, "$FILE_NAME.bak").exists()
+        if (!f.exists() && !bakExists) return null
         val atomic = AtomicFile(f)
         return try {
             val root = atomic.openRead().bufferedReader().use { reader ->

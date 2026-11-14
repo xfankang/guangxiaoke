@@ -91,9 +91,9 @@ internal object ScheduleCodec {
             endPeriod = end,
             weeks = weeks,
             weeksText = optString("weeksText"),
-            color = optInt("color", 0).let { stored ->
-                if (stored != 0) stored else CourseColors.of(name)
-            },
+            // color 原样回读：0 表示「页面没给颜色，用主题色」。
+            // 替换成调色板色会导致同一份数据重启前后颜色不一致
+            color = optInt("color", 0),
         )
     }
 }

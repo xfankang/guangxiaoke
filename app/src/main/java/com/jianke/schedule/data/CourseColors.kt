@@ -1,6 +1,5 @@
 package com.jianke.schedule.data
 
-import kotlin.math.abs
 
 /**
  * 课程配色。
@@ -30,7 +29,9 @@ object CourseColors {
 
     fun of(name: String): Int {
         if (name.isBlank()) return 0
-        val index = abs(name.hashCode()) % PALETTE.size
+        // floorMod 而不是 abs(hashCode())：hashCode 恰为 Int.MIN_VALUE 时 abs 溢出为负，
+        // 负索引会直接崩
+        val index = Math.floorMod(name.hashCode(), PALETTE.size)
         return PALETTE[index]
     }
 }

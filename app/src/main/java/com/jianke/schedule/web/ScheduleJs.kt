@@ -32,7 +32,8 @@ object ScheduleJs {
   function txt(el) {
     if (!el) { return ''; }
     var t = el.innerText || el.textContent || '';
-    return t.replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').trim();
+    // 折叠空行与 scrapeScript 同口径：名字与教室之间夹空元素时，教室才不会取到空串
+    return t.replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
   }
   function styleHeight(style) {
     var m = /height:\s*([0-9.]+)px/.exec(style || '');
@@ -85,7 +86,7 @@ object ScheduleJs {
       var wa = parseInt(ma[1], 10);
       if (wa >= 1 && wa <= 30) { return wa; }
     }
-    var re = /第\s*([0-9]{1,2})\s*周\s*([0-9]{4})-([0-9]{2})-([0-9]{2})(?:\s*\/\s*([0-9]{4})-([0-9]{2})-([0-9]{2}))?/g;
+    var re = /第\s*([0-9]{1,2})\s*周\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:\s*\/\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2}))?/g;
     var m, first = 0;
     var now = new Date();
     var today = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
@@ -619,7 +620,7 @@ object ScheduleJs {
       var wa = parseInt(ma[1], 10);
       if (wa >= 1 && wa <= 30) { return String(wa); }
     }
-    var re = /第\s*([0-9]{1,2})\s*周\s*([0-9]{4})-([0-9]{2})-([0-9]{2})/g;
+    var re = /第\s*([0-9]{1,2})\s*周\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})/g;
     var m;
     while ((m = re.exec(body))) {
       var w = parseInt(m[1], 10);

@@ -29,6 +29,13 @@ class ScheduleBuilderTest {
         assertEquals("2026-08-31", start)
     }
 
+    /** 表头日期是周日（ISO 周定义下属于同一周）：同样归位到本周一。 */
+    @Test
+    fun sundayHeaderNormalizesToSameWeekMonday() {
+        val start = build("第7周 2026-10-18\n周一")
+        assertEquals("2026-08-31", start)
+    }
+
     /** 跨年学期（12 月 → 次年 1 月）：LocalDate 的周运算不受年界影响。 */
     @Test
     fun crossYearSemester() {

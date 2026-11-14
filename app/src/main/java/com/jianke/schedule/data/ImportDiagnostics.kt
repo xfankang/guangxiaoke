@@ -49,12 +49,14 @@ object ImportDiagnostics {
             }
         }
         sb.append("页面本周的课：\n")
+        // 缺 q 的格子按「行号 × 每行小节数」推起始节，与解析层同口径（诊断里的节次要可信）
+        val perRow = meta?.optInt("perRow", 1) ?: 1
         val page = obj.optJSONArray("page")
         if (page != null) {
             for (i in 0 until minOf(page.length(), 20)) {
                 val c = page.optJSONObject(i) ?: continue
                 val name = c.optString("t").split("\n").firstOrNull().orEmpty()
-                val period = c.optString("q").toIntOrNull() ?: (c.optInt("p") + 1)
+                val period = c.optString("q").toIntOrNull() ?: (c.optInt("p") * perRow + 1)
                 sb.append("  ").append(name)
                     .append("  周").append(c.optInt("d") + 1)
                     .append("  第").append(period).append("节\n")
