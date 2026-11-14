@@ -230,6 +230,8 @@ fun SettingsScreen(
                 title = "最初的起点",
                 showChevron = true,
                 onClick = { showEgg = true },
+                // 纯展示入口：点击不蒙灰罩
+                highlightOnPress = false,
             )
         }
         // 尾部留出玻璃底栏的高度：卡片滚动时从玻璃下面穿过

@@ -3,6 +3,7 @@ package com.jianke.schedule.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -216,6 +218,9 @@ fun CircleIconButton(
  * 设置项：左边一个圆角图标底板，中间标题 + 说明，右边控件或箭头。
  *
  * 用统一的图标底板而不是三行纯文字，设置页才不会像一张「参数表单」。
+ *
+ * @param highlightOnPress 点击时是否显示整行按压高亮；彩蛋这类纯展示入口传 false，
+ * 避免按下去整行蒙一层灰罩。
  */
 @Composable
 fun SettingRow(
@@ -225,17 +230,27 @@ fun SettingRow(
     onClick: (() -> Unit)? = null,
     showChevron: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
+    highlightOnPress: Boolean = true,
 ) {
+    val clickableModifier = if (onClick != null) {
+        if (highlightOnPress) {
+            Modifier.clickable(role = Role.Button, onClick = onClick)
+        } else {
+            // indication = null：仍然响应点击，只是不画按压高亮
+            Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+        }
+    } else {
+        Modifier
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(role = Role.Button, onClick = onClick)
-                } else {
-                    Modifier
-                },
-            )
+            .then(clickableModifier)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

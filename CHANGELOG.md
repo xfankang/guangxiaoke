@@ -10,6 +10,8 @@
   `as?` 转换恒为 null，`setDimAmount(0f)` 从未执行 —— 点开「最初的起点」背景仍被压暗
 - 改到 Dialog 内容里取 `LocalView`（此时才是弹窗自己的 View），parent 即 `DialogWindowProvider`；
   实测背景亮度 8/13 → 20/32，压暗消失，弹窗内图像区域无变化；关闭时照旧还原原 dimAmount
+- **彩蛋行点击不再蒙按压灰罩**：`SettingRow` 新增 `highlightOnPress` 参数（默认 true 不影响其他行），
+  「最初的起点」传 false —— 点击仍打开弹窗，但整行不再闪一层按压高亮
 
 ## v4.3.0（2026-11-14）
 - **彩蛋弹窗去掉变暗遮罩**：点击「最初的起点」时背景不再被压暗一层，
