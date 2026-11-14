@@ -45,7 +45,7 @@ fun GxDock(
             FloatingBottomBarItem(
                 selected = selectedIndex == index,
                 onClick = { activate(index) },
-                modifier = Modifier.defaultMinSize(minWidth = 76.dp),
+                modifier = Modifier.defaultMinSize(minWidth = 100.dp),
             ) {
                 Icon(
                     imageVector = item.icon,

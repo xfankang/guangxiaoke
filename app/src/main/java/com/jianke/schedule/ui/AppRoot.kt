@@ -6,7 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -114,7 +114,7 @@ fun AppRoot() {
 
     AppTheme(darkOverride = darkOverride) {
         // 关闭过度滚动回弹/拉伸：内容一屏放得下的页面拖动时不再上下晃动
-        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+        CompositionLocalProvider(LocalOverscrollFactory provides null) {
             Box(modifier = Modifier.fillMaxSize()) {
                 // 壁纸底层（有自定义壁纸时铺在最下面）
                 val currentWallpaper = wallpaper

@@ -4,7 +4,15 @@
 
 ---
 
-## v4.0.0（2026-11-14）
+## v4.1.0（2026-11-14）
+- **修复：设置页拖动仍会上下移动**：Compose 1.12 把过度滚动 API 换成了
+  `LocalOverscrollFactory`，v4.0.0 禁回弹用的旧 `LocalOverscrollConfiguration`
+  已被无视 —— 拉伸回弹还在。换用新 API 后，一屏放得下的页面拖动完全固定，
+  内容超出一屏时仍可正常滚动（小屏 / 大字体兜底）
+- **Dock 拉长**：每项最小宽度 76 → 100dp，整体更舒展；课表区域不受影响
+- 真机（K60 / Android 17）实测：Dock 玻璃观感、设置页固定、课表不被遮挡
+
+## v4.0.0（2026-11-14）## v4.0.0（2026-11-14）
 - **Dock 换上 KSU 管理器同款液态玻璃**（移植自 [KernelSU](https://github.com/tiann/KernelSU)
   管理器的 FloatingBottomBar / liquid 组件，GPL-3.0，来源已在文件头注明；
   其折射着色器源自 Kyant0/AndroidLiquidGlass，Apache 2.0）：毛玻璃 + 边缘折射 +
