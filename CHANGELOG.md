@@ -4,6 +4,13 @@
 
 ---
 
+## v4.3.1（2026-11-14）
+- **修复彩蛋弹窗背景变黑**：v4.3.0 的「去遮罩」把 DisposableEffect 写在了 `Dialog { }` 外面，
+  那里的 `LocalView.current` 是宿主 Activity 的 View，其 parent 不是 `DialogWindowProvider`，
+  `as?` 转换恒为 null，`setDimAmount(0f)` 从未执行 —— 点开「最初的起点」背景仍被压暗
+- 改到 Dialog 内容里取 `LocalView`（此时才是弹窗自己的 View），parent 即 `DialogWindowProvider`；
+  实测背景亮度 8/13 → 20/32，压暗消失，弹窗内图像区域无变化；关闭时照旧还原原 dimAmount
+
 ## v4.3.0（2026-11-14）
 - **彩蛋弹窗去掉变暗遮罩**：点击「最初的起点」时背景不再被压暗一层，
   彩蛋直接浮在页面上（关闭弹窗时还原系统遮罩设置）

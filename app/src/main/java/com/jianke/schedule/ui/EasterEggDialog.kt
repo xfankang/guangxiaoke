@@ -55,16 +55,18 @@ fun EasterEggDialog(onDismiss: () -> Unit) {
         }
     }
 
-    // 去掉 Dialog 默认的变暗遮罩：彩蛋直接浮在页面上，不做压暗；关闭时还原
-    val view = LocalView.current
-    DisposableEffect(view) {
-        val window = (view.parent as? DialogWindowProvider)?.window
-        val original = window?.attributes?.dimAmount ?: 0f
-        window?.setDimAmount(0f)
-        onDispose { window?.setDimAmount(original) }
-    }
-
     Dialog(onDismissRequest = onDismiss) {
+        // 去掉 Dialog 默认的变暗遮罩：彩蛋直接浮在页面上，不做压暗；关闭时还原。
+        // 必须写在 Dialog 内容里 —— 这里 LocalView 才是「弹窗自己的 View」，
+        // 它的 parent 才实现了 DialogWindowProvider。写在 Dialog 外面时拿到的是宿主
+        // Activity 的 View，类型转换恒为 null，遮罩根本不会去掉（表现为点开彩蛋背景变黑）。
+        val dialogView = LocalView.current
+        DisposableEffect(dialogView) {
+            val window = (dialogView.parent as? DialogWindowProvider)?.window
+            val original = window?.attributes?.dimAmount ?: 0f
+            window?.setDimAmount(0f)
+            onDispose { window?.setDimAmount(original) }
+        }
         Card(
             modifier = Modifier.fillMaxWidth(),
             cornerRadius = 20.dp,
