@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -145,17 +146,39 @@ fun AppRoot() {
                 CompositionLocalProvider(LocalWallpaperActive provides (currentWallpaper != null)) {
                     top.yukonga.miuix.kmp.basic.Scaffold(
                         topBar = {
-                            SmallTopAppBar(
-                                title = when (tab) {
-                                    0 -> "广小课"
-                                    1 -> "设置"
-                                    else -> "关于"
-                                },
-                                // 「广小课」下面这行小字
-                                subtitle = if (tab == 0) "天天开心" else "",
-
-                                color = barSurface(),
-                            )
+                            // 顶栏背景钉住不参与过渡，标题/副标题随页面做同一套
+                            // 「先淡出再淡入」：两根透明底的 Miuix 顶栏在 AnimatedContent
+                            // 里交叉淡化，渲染仍是原组件（样式像素级一致）。
+                            // 副标题槽位用空格占位（而非空串）让三页顶栏高度一致，
+                            // 切页时内容不再因顶栏变高变矮而上下跳。
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(barSurface()),
+                            ) {
+                                AnimatedContent(
+                                    targetState = tab,
+                                    transitionSpec = {
+                                        fadeIn(
+                                            tween(280, delayMillis = 70, easing = LinearOutSlowInEasing),
+                                        ).togetherWith(
+                                            fadeOut(tween(160, easing = FastOutLinearInEasing)),
+                                        )
+                                    },
+                                    label = "topBar",
+                                ) { t ->
+                                    SmallTopAppBar(
+                                        title = when (t) {
+                                            0 -> "广小课"
+                                            1 -> "设置"
+                                            else -> "关于"
+                                        },
+                                        // 「广小课」下面这行小字
+                                        subtitle = if (t == 0) "天天开心" else " ",
+                                        color = Color.Transparent,
+                                    )
+                                }
+                            }
                         },
                         bottomBar = {
                             if (!dock) {
