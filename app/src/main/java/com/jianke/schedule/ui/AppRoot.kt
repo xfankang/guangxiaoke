@@ -2,9 +2,12 @@ package com.jianke.schedule.ui
 
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
@@ -197,11 +200,29 @@ fun AppRoot() {
                                         },
                                     ),
                             ) {
-                                // 页面固定住：切页只做淡入淡出，不再上下滑动
+                                // 页面固定住：切页做「先淡出、再淡入」的交错过渡，不再上下滑动。
+                                // 旧实现两屏同时互透（220ms/120ms），深色主题下两张全屏内容
+                                // 半透明叠加，看起来像鬼影一闪。这里入场延迟 70ms 等旧屏
+                                // 基本退场再进来，过渡走背景而不是叠影；加 1/24 屏的上移，
+                                // 动效有方向感，节奏是先收后放才自然。
                                 AnimatedContent(
                                     targetState = tab,
                                     transitionSpec = {
-                                        fadeIn(tween(220)).togetherWith(fadeOut(tween(120)))
+                                        (
+                                            fadeIn(
+                                                tween(280, delayMillis = 70, easing = LinearOutSlowInEasing),
+                                            ) +
+                                                slideInVertically(
+                                                    animationSpec = tween(
+                                                        280,
+                                                        delayMillis = 70,
+                                                        easing = LinearOutSlowInEasing,
+                                                    ),
+                                                    initialOffsetY = { it / 24 },
+                                                )
+                                            ).togetherWith(
+                                            fadeOut(tween(160, easing = FastOutLinearInEasing)),
+                                        )
                                     },
                                     label = "tab",
                                 ) { target ->
