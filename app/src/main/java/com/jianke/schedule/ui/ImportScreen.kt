@@ -32,6 +32,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,9 @@ import com.jianke.schedule.data.WeekParser
 import com.jianke.schedule.web.ApiProbeJs
 import com.jianke.schedule.web.ScheduleJs
 import com.jianke.schedule.web.SchoolEndpoints
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Button
@@ -66,21 +70,23 @@ private const val PHASE_API = 0
 private const val PHASE_FAST = 1
 private const val PHASE_SLOW = 2
 
-private class ScanState(private val context: Context) {
-    val startedAt = android.os.SystemClock.elapsedRealtime()
+    private class ScanState(private val context: Context) {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
 
-    /**
-     * 打点：导入全链路各阶段耗时，追加到 import_debug/timing.txt。
-     * 不用 logcat —— MIUI 默认抑制应用日志（缓冲区直接为空），落文件才可靠。
-     */
-    fun log(stage: String) {
-        val line = "t=" + (android.os.SystemClock.elapsedRealtime() - startedAt) + "ms  " + stage
-        android.util.Log.i("GxkImport", line)
-        runCatching {
-            val dir = java.io.File(context.filesDir, "import_debug").apply { mkdirs() }
-            java.io.File(dir, "timing.txt").appendText(line + "\n")
+        /**
+         * 打点：导入全链路各阶段耗时，追加到 import_debug/timing.txt。
+         * 不用 logcat —— MIUI 默认抑制应用日志（缓冲区直接为空），落文件才可靠。
+         * @Synchronized：保存完成等打点已经挪到 IO 线程，追加写不能和主线程交叉。
+         */
+        @Synchronized
+        fun log(stage: String) {
+            val line = "t=" + (android.os.SystemClock.elapsedRealtime() - startedAt) + "ms  " + stage
+            android.util.Log.i("GxkImport", line)
+            runCatching {
+                val dir = java.io.File(context.filesDir, "import_debug").apply { mkdirs() }
+                java.io.File(dir, "timing.txt").appendText(line + "\n")
+            }
         }
-    }
 
     var phase = PHASE_API
     var apiTried = false
@@ -130,6 +136,7 @@ fun ImportScreen(
     var importedCourses by remember { mutableStateOf<List<Course>>(emptyList()) }
     val scan = remember { ScanState(context) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val scope = rememberCoroutineScope()
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     // 连接层错误（超时/拒连/DNS）：非空时用友好提示页盖住 WebView 的原始英文报错
     var connectionError by remember { mutableStateOf<String?>(null) }
@@ -148,28 +155,39 @@ fun ImportScreen(
         if (delayMs <= 0L) evaluate() else mainHandler.postDelayed({ evaluate() }, delayMs)
     }
 
-    fun persist(courses: List<Course>, bodyText: String, weeks: List<Int>): Boolean {
-        return try {
-            val schedule = ScheduleBuilder.build(bodyText, courses, weeks)
-            ScheduleStore.save(context, schedule)
-            importedCourses = courses
-            importedCount = courses.size
-            scan.log("课表保存完成（" + courses.size + " 门）")
-            // 只有保存成功后才同步会话，失败时保留旧课表并给出可见错误。
-            runCatching { android.webkit.CookieManager.getInstance().flush() }
-            true
-        } catch (e: Exception) {
-            status = "课表保存失败"
-            failure = "课程已经解析完成，但无法写入本地存储。请检查手机剩余空间后重试。"
-            false
+    /** 诊断 dump 写盘挪后台：主线程只负责把内容交出来，不等磁盘。 */
+    fun dumpAsync(name: String, content: String) {
+        scope.launch(Dispatchers.IO) {
+            runCatching { ScheduleStore.saveDebugDump(context, name, content) }
         }
     }
 
     fun saveAndFinish(courses: List<Course>, bodyText: String, weeks: List<Int>, via: String) {
         if (scan.finished) return
         scan.finished = true
-        if (persist(courses, bodyText, weeks)) {
-            status = "已导入 " + courses.size + " 门课（" + via + "）"
+        status = "正在保存课表…"
+        scan.log("课表保存开始（" + courses.size + " 门）")
+        // JSON 编码 + 原子写盘是 IO：主线程只收结果更新状态，低配机上导入不再一顿一顿
+        scope.launch(Dispatchers.IO) {
+            val ok = try {
+                ScheduleStore.save(context, ScheduleBuilder.build(bodyText, courses, weeks))
+                true
+            } catch (e: Exception) {
+                false
+            }
+            withContext(Dispatchers.Main) {
+                if (!ok) {
+                    status = "课表保存失败"
+                    failure = "课程已经解析完成，但无法写入本地存储。请检查手机剩余空间后重试。"
+                    return@withContext
+                }
+                importedCourses = courses
+                importedCount = courses.size
+                status = "已导入 " + courses.size + " 门课（" + via + "）"
+                scan.log("课表保存完成（" + courses.size + " 门）")
+                // 只有保存成功后才同步会话，失败时保留旧课表并给出可见错误。
+                runCatching { android.webkit.CookieManager.getInstance().flush() }
+            }
         }
     }
 
@@ -198,16 +216,13 @@ fun ImportScreen(
     fun finishWithWeekMap() {
         if (scan.finished) return
         val merged = ScheduleMerger.merge(scan.byWeek)
-
-        scan.finished = true
         if (merged.isEmpty()) {
+            scan.finished = true
             status = "没有解析出课程"
             failure = Diagnostics.summarize(lastRaw)
             return
         }
-        if (persist(merged, scan.lastBody, scan.byWeek.keys.toList())) {
-            status = "已导入 " + merged.size + " 门课（扫描 " + scan.byWeek.size + " 周）"
-        }
+        saveAndFinish(merged, scan.lastBody, scan.byWeek.keys.toList(), "扫描 " + scan.byWeek.size + " 周")
     }
 
     /**
@@ -220,40 +235,46 @@ fun ImportScreen(
     fun handleApi(payload: String) {
         if (scan.finished) return
         apiProbeRaw = payload
-        ScheduleStore.saveDebugDump(context, "api_probe.json", payload)
-        val obj = try {
-            JSONObject(payload)
-        } catch (t: Throwable) {
-            null
-        }
-        if (obj == null) {
-            scan.log("接口探测返回异常，回退页面扫描")
-            startFastScan()
-            return
-        }
-        val text = obj.optString("text")
-        val bigMode = obj.optBoolean("bigMode")
-        val body = obj.optJSONObject("meta")?.optString("body").orEmpty()
-        // 页面上一行（一个大节）的真实像素高度：用来把格子高度换算成小节数。
-        // 写死 50px 时，每行 2 小节的页面上跨 4 行的大课会被算成 6 小节，校验就永远对不上。
-        val pageUnit = obj.optJSONObject("meta")?.optDouble("unit", 0.0) ?: 0.0
-        val result = ApiValidator.validate(obj.optJSONArray("page"), body, text, bigMode, pageUnit)
-        val courses = result.courses
-        val verdict = result.verdict
-        val report = ImportDiagnostics.apiReport(obj).trimEnd() + "\n\n校验结论：\n" + verdict
-        apiReport = report
-        ScheduleStore.saveDebugDump(context, "api_mismatch.txt", report)
-        if (courses != null && courses.isNotEmpty()) {
-            // 校验通过：那就不该再挂「没通过校验」的卡片，只留一份周次核对表备用
-            apiReport = null
-            ScheduleStore.saveDebugDump(context, "kbList.json", text)
-            scan.log("接口校验通过（" + courses.size + " 条）")
-            val weeks = courses.flatMap { it.weeks }.distinct().sorted()
-            saveAndFinish(courses, body, weeks, "直连接口（校验通过）")
-        } else {
-            apiReport = report
-            scan.log("接口校验未通过，回退页面扫描")
-            startFastScan()
+        dumpAsync("api_probe.json", payload)
+        // 接口返回可能几百 KB：JSON 解析 + 双向校验放后台线程，主线程只收结果
+        scope.launch(Dispatchers.IO) {
+            val obj = try {
+                JSONObject(payload)
+            } catch (t: Throwable) {
+                null
+            }
+            if (obj == null) {
+                withContext(Dispatchers.Main) {
+                    scan.log("接口探测返回异常，回退页面扫描")
+                    startFastScan()
+                }
+                return@launch
+            }
+            val text = obj.optString("text")
+            val bigMode = obj.optBoolean("bigMode")
+            val body = obj.optJSONObject("meta")?.optString("body").orEmpty()
+            // 页面上一行（一个大节）的真实像素高度：用来把格子高度换算成小节数。
+            // 写死 50px 时，每行 2 小节的页面上跨 4 行的大课会被算成 6 小节，校验就永远对不上。
+            val pageUnit = obj.optJSONObject("meta")?.optDouble("unit", 0.0) ?: 0.0
+            val result = ApiValidator.validate(obj.optJSONArray("page"), body, text, bigMode, pageUnit)
+            val report = ImportDiagnostics.apiReport(obj).trimEnd() + "\n\n校验结论：\n" + result.verdict
+            dumpAsync("api_mismatch.txt", report)
+            withContext(Dispatchers.Main) {
+                if (scan.finished || scan.phase != PHASE_API) return@withContext
+                apiReport = report
+                val courses = result.courses
+                if (courses != null && courses.isNotEmpty()) {
+                    // 校验通过：那就不该再挂「没通过校验」的卡片，只留一份周次核对表备用
+                    apiReport = null
+                    dumpAsync("kbList.json", text)
+                    scan.log("接口校验通过（" + courses.size + " 条）")
+                    val weeks = courses.flatMap { it.weeks }.distinct().sorted()
+                    saveAndFinish(courses, body, weeks, "直连接口（校验通过）")
+                } else {
+                    scan.log("接口校验未通过，回退页面扫描")
+                    startFastScan()
+                }
+            }
         }
     }
 
@@ -266,23 +287,29 @@ fun ImportScreen(
         if (!payload.startsWith("done:")) return
         val json = payload.removePrefix("done:")
         lastRaw = json
-        ScheduleStore.saveDebugDump(context, "fullscan.json", json)
-        val merged = MobileDomParser.parseFullScan(json)
-        if (merged != null && merged.isNotEmpty()) {
-            val body = MobileDomParser.bodyOfFullScan(json)
-            val weeks = MobileDomParser.weeksOf(json)
-            scan.log("整学期扫描完成（" + weeks.size + " 周）")
-            saveAndFinish(merged, body, weeks, "整学期扫描 " + weeks.size + " 周")
-        } else {
-            scan.log("整学期扫描结果为空，回退逐周扫描")
-            startSlowScan()
+        dumpAsync("fullscan.json", json)
+        // 整学期结果的 JSON 可能上百 KB：解析放后台线程
+        scope.launch(Dispatchers.IO) {
+            val merged = MobileDomParser.parseFullScan(json)
+            val body = if (merged != null) MobileDomParser.bodyOfFullScan(json) else ""
+            val weeks = if (merged != null) MobileDomParser.weeksOf(json) else emptyList()
+            withContext(Dispatchers.Main) {
+                if (scan.finished || scan.phase != PHASE_FAST) return@withContext
+                if (merged != null && merged.isNotEmpty()) {
+                    scan.log("整学期扫描完成（" + weeks.size + " 周）")
+                    saveAndFinish(merged, body, weeks, "整学期扫描 " + weeks.size + " 周")
+                } else {
+                    scan.log("整学期扫描结果为空，回退逐周扫描")
+                    startSlowScan()
+                }
+            }
         }
     }
 
     fun handleScrape(payload: String) {
         if (scan.finished) return
         lastRaw = payload
-        ScheduleStore.saveDebugDump(context, "scrape.json", payload)
+        dumpAsync("scrape.json", payload)
         val root = try {
             JSONObject(payload)
         } catch (t: Throwable) {

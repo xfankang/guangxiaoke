@@ -1,6 +1,7 @@
 package com.jianke.schedule.data
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.util.AtomicFile
 import androidx.compose.ui.graphics.ImageBitmap
@@ -16,6 +17,14 @@ object Wallpaper {
     private const val FILE_NAME = "wallpaper.img"
     private const val BACKUP_NAME = "wallpaper.bak"
     private const val TEMP_NAME = "wallpaper.tmp"
+
+    /**
+     * 壁纸的两件套：原图（上层 Fit 显示用）+ 预模糊小图（底层背景用）。
+     *
+     * 模糊在加载时一次性算好（反复减半采样的位图，GPU 放大时自带的双线性滤波
+     * 就是模糊效果）——界面里不再每帧跑 48dp 模糊着色，低配机的 GPU 压力归零。
+     */
+    data class WallpaperArt(val full: ImageBitmap, val blurred: ImageBitmap)
 
     fun file(context: Context): File = File(context.filesDir, FILE_NAME)
 
@@ -74,14 +83,38 @@ object Wallpaper {
         }
     }
 
-    fun load(context: Context): ImageBitmap? {
+    fun load(context: Context): WallpaperArt? {
         val f = file(context)
         if (!f.exists()) return null
         return try {
-            ImageDecode.fromFile(f.absolutePath)?.asImageBitmap()
+            val bitmap = ImageDecode.fromFile(f.absolutePath) ?: return null
+            WallpaperArt(
+                full = bitmap.asImageBitmap(),
+                blurred = blurredPreview(bitmap).asImageBitmap(),
+            )
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 预模糊：把位图反复减半采样到极小（约 1/32），GPU 放大回全屏时
+     * 双线性滤波天然就是柔和的模糊效果——等价于原来逐帧执行的 48dp 模糊，
+     * 但只在加载时算一次，运行时零成本。中间产物即用即弃；
+     * **第一步绝不回收源图**——它还是上层「原图显示」在用的那张。
+     */
+    private fun blurredPreview(source: Bitmap): Bitmap {
+        var b = Bitmap.createScaledBitmap(source, source.width / 2, source.height / 2, true)
+        var w = b.width
+        var h = b.height
+        while (minOf(w, h) > 48) {
+            w /= 2
+            h /= 2
+            val scaled = Bitmap.createScaledBitmap(b, w, h, true)
+            b.recycle()
+            b = scaled
+        }
+        return b
     }
 
     fun clear(context: Context) {

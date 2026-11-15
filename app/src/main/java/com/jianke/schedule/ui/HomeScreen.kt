@@ -32,6 +32,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -838,10 +840,16 @@ private fun TodayTimeline(
     // 停在今日课程页时状态也要走：原来取的是「组合那一刻」的时间，
     // 一节课上完胶囊还挂着「进行中」。每半分钟刷一次足够。
     var now by remember { mutableStateOf(LocalTime.now()) }
+    // 停在今日课程页时状态也要走：原来取的是「组合那一刻」的时间，
+    // 一节课上完胶囊还挂着「进行中」。每半分钟刷一次足够；
+    // 退到后台后（生命周期不在 STARTED）就不再刷新，不给系统添无谓的唤醒
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(todayCourses) {
         while (true) {
             delay(30_000)
-            now = LocalTime.now()
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                now = LocalTime.now()
+            }
         }
     }
 

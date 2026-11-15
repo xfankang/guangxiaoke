@@ -63,7 +63,7 @@ fun SettingsScreen(
     var eggBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var eggSource by remember { mutableStateOf<String?>(null) }
     // 正在调整构图的那张图（选完图 / 点「调整位置」时打开）
-    var editing by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var editing by remember { mutableStateOf<Wallpaper.WallpaperArt?>(null) }
     var editScale by remember { mutableStateOf(1f) }
     var editFracX by remember { mutableStateOf(0f) }
     var editFracY by remember { mutableStateOf(0f) }
@@ -253,7 +253,7 @@ fun SettingsScreen(
     val bmp = editing
     if (bmp != null) {
         WallpaperEditorDialog(
-            bitmap = bmp,
+            art = bmp,
             initialScale = editScale,
             initialFracX = editFracX,
             initialFracY = editFracY,

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,8 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.unit.dp
 import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.ScheduleStore
@@ -89,11 +92,39 @@ fun AppRoot() {
     // 悬浮 Dock 自己控制位置：贴着系统导航栏上方 8dp。
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var wallpaperVersion by remember { mutableIntStateOf(0) }
-    var wallpaper by remember { mutableStateOf<ImageBitmap?>(null) }
+    var wallpaper by remember { mutableStateOf<Wallpaper.WallpaperArt?>(null) }
+    // 内存优化：壁纸位图约 10MB——进入导入（WebView 很吃内存）和退到后台时释放，
+    // 回前台/导入完成后再解码恢复（后台线程，进来一瞬间是纯色底，随即恢复壁纸）
+    var wallpaperReleased by remember { mutableStateOf(false) }
     LaunchedEffect(wallpaperVersion) {
         wallpaper = withContext(Dispatchers.IO) {
             runCatching { Wallpaper.load(context) }.getOrNull()
         }
+        wallpaperReleased = false
+    }
+    LaunchedEffect(importing) {
+        if (importing && wallpaper != null) {
+            wallpaper = null
+            wallpaperReleased = true
+        }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> if (wallpaper != null) {
+                    wallpaper = null
+                    wallpaperReleased = true
+                }
+                Lifecycle.Event.ON_RESUME -> if (wallpaperReleased) {
+                    wallpaperReleased = false
+                    wallpaperVersion++
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     // 液态玻璃开关（设置页可切）：只作用于 Dock 的玻璃质感
     var glassEnabled by remember { mutableStateOf(Prefs.glassEnabled(context)) }
@@ -108,6 +139,8 @@ fun AppRoot() {
                     schedule = runCatching { ScheduleStore.load(context) }.getOrNull()
                     importing = false
                     tab = 0
+                    // 导入期间壁纸被释放过：重新解码恢复
+                    if (Wallpaper.file(context).exists()) wallpaperVersion++
                 },
             )
         }
@@ -122,7 +155,7 @@ fun AppRoot() {
                 val currentWallpaper = wallpaper
                 if (currentWallpaper != null) {
                     WallpaperLayer(
-                        bitmap = currentWallpaper,
+                        art = currentWallpaper,
                         scale = wpScale,
                         fracX = wpOffsetX,
                         fracY = wpOffsetY,

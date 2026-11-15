@@ -23,13 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.jianke.schedule.data.Wallpaper
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -49,7 +49,7 @@ private const val MAX_SCALE = 6f
  */
 @Composable
 fun WallpaperEditorDialog(
-    bitmap: ImageBitmap,
+    art: Wallpaper.WallpaperArt,
     initialScale: Float,
     initialFracX: Float,
     initialFracY: Float,
@@ -62,8 +62,8 @@ fun WallpaperEditorDialog(
     } else {
         0.5f
     }
-    val imgW = bitmap.width.toFloat()
-    val imgH = bitmap.height.toFloat()
+    val imgW = art.full.width.toFloat()
+    val imgH = art.full.height.toFloat()
 
     var scale by remember { mutableFloatStateOf(initialScale.coerceIn(MIN_SCALE, MAX_SCALE)) }
     var fracX by remember { mutableFloatStateOf(initialFracX) }
@@ -120,7 +120,7 @@ fun WallpaperEditorDialog(
                         },
                 ) {
                     WallpaperLayer(
-                        bitmap = bitmap,
+                        art = art,
                         scale = scale,
                         fracX = fracX,
                         fracY = fracY,
