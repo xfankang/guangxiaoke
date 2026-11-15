@@ -13,25 +13,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.jianke.schedule.data.EasterEgg
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -40,20 +32,18 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * 彩蛋：屏幕中央弹出照片。
- * 图片按 [EasterEgg] 里的候选位置加载，找不到就显示占位说明——不会崩、也不是死按钮。
- * 解码放后台线程：弹窗先显示占位，图片就绪后再换上去，大图不卡主线程。
+ *
+ * 照片由调用方**预先解码好**再传进来（设置页一进来就后台预加载）——
+ * 弹窗打开的第一帧就是成品，不会出现「先弹窗、照片再补进来」的闪变。
+ * 之前把加载写在弹窗内部：每次打开都要等一次 IO，占位图先闪一下再被照片顶掉。
+ * 图片找不到时显示占位说明——不会崩、也不是死按钮。
  */
 @Composable
-fun EasterEggDialog(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var source by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            bitmap = EasterEgg.load(context)
-            source = EasterEgg.resolvedSource(context)
-        }
-    }
+fun EasterEggDialog(
+    bitmap: ImageBitmap?,
+    source: String?,
+    onDismiss: () -> Unit,
+) {
 
     Dialog(onDismissRequest = onDismiss) {
         // 去掉 Dialog 默认的变暗遮罩：彩蛋直接浮在页面上，不做压暗；关闭时还原。

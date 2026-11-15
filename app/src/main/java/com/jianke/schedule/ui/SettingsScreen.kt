@@ -17,8 +17,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.jianke.schedule.data.EasterEgg
 import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.Wallpaper
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +57,11 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var hint by remember { mutableStateOf("") }
     var showEgg by remember { mutableStateOf(false) }
+    // 彩蛋照片：点开彩蛋行时同步解码（本地小图几十毫秒，无感）——
+    // 弹窗第一帧就是成品照片，不会「先弹窗、照片再补进来」地闪；
+    // 也不做后台预加载，不点彩蛋就不花这份开销
+    var eggBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var eggSource by remember { mutableStateOf<String?>(null) }
     // 正在调整构图的那张图（选完图 / 点「调整位置」时打开）
     var editing by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var editScale by remember { mutableStateOf(1f) }
@@ -229,7 +236,12 @@ fun SettingsScreen(
                 icon = MiuixIcons.WorldClock,
                 title = "最初的起点",
                 showChevron = true,
-                onClick = { showEgg = true },
+                onClick = {
+                    // 同步解码后再弹窗：runCatching 兜底，解码失败时弹窗显示占位说明
+                    eggBitmap = runCatching { EasterEgg.load(context) }.getOrNull()
+                    eggSource = runCatching { EasterEgg.resolvedSource(context) }.getOrNull()
+                    showEgg = true
+                },
                 // 纯展示入口：点击不蒙灰罩
                 highlightOnPress = false,
             )
@@ -270,7 +282,11 @@ fun SettingsScreen(
     }
 
     if (showEgg) {
-        EasterEggDialog(onDismiss = { showEgg = false })
+        EasterEggDialog(
+            bitmap = eggBitmap,
+            source = eggSource,
+            onDismiss = { showEgg = false },
+        )
     }
 }
 
