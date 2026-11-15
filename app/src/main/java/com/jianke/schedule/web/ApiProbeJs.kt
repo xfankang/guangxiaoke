@@ -36,15 +36,17 @@ object ApiProbeJs {
     var el = document.getElementById(id);
     return el ? String(el.value || '') : '';
   }
-  // 网格没渲染出来就抓不到页面基准，盲等固定毫秒要么浪费、要么在慢机上
-  // 抓到空页面白白回退。就绪等待：一出现立刻往下走，5 秒兜底照常执行。
+  // 网格没渲染出来就抓不到页面基准。等的不只是「容器出现」——全新登录后
+  // 学校会话初始化慢，容器先出现、课程格子由 AJAX 填充，只查容器会拿到
+  // 空网格、校验白白失败一次退到慢路径。等网格里真的有课程格子再动手；
+  // 15 秒兜底（App 侧只挂一个更晚的看门狗，正常由这里的回传决定走向）。
   function gxkReady(fn) {
     var tries = 0;
     var timer = setInterval(function () {
       tries++;
-      if (document.querySelector('.Courses-content') || document.querySelector('ul.stage_k')) {
+      if (document.querySelector('.Courses-content .course-hasContent')) {
         clearInterval(timer); fn();
-      } else if (tries >= 100) { clearInterval(timer); fn(); }
+      } else if (tries >= 300) { clearInterval(timer); fn(); }
     }, 50);
   }
 

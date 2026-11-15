@@ -60,6 +60,14 @@ class ScheduleJsTest {
         assertTrue(ApiProbeJs.script.contains("gxkReady"))
     }
 
+    /** 接口探测的门必须等「真格子」出现；只等容器会在全新登录的慢页面上拿空网格白跑一次校验。 */
+    @Test
+    fun apiProbeGateWaitsForRealCells() {
+        assertTrue(ApiProbeJs.script.contains("document.querySelector('.Courses-content .course-hasContent')"))
+        assertTrue(ApiProbeJs.script.contains("tries >= 300"))
+        assertFalse(ApiProbeJs.script.contains("tries >= 100"))
+    }
+
     /** 探测收集课程数组必须与 ZfsoftParser 同口径（kbList 之外还有 sjkList 等），并发发出。 */
     @Test
     fun apiProbeCollectsAllCourseArraysAndRunsInParallel() {
