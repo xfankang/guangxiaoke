@@ -90,6 +90,10 @@ private const val PHASE_SLOW = 2
 
     var phase = PHASE_API
     var apiTried = false
+    /** 每次注入接口探测脚本 +1；看门狗的延迟回调只对「当前这一次」生效。 */
+    var apiAttempt = 0
+    /** 「页面还没渲染出课表」的免费重试次数：这种页面不算接口失败，不消耗机会。 */
+    var apiNoGridRetries = 0
     var fastInjected = false
     val byWeek = LinkedHashMap<Int, List<Course>>()
     var stale = 0
@@ -153,6 +157,21 @@ fun ImportScreen(
             }
         }
         if (delayMs <= 0L) evaluate() else mainHandler.postDelayed({ evaluate() }, delayMs)
+    }
+
+    /**
+     * 重新打开课表页 = 新一轮尝试：把「接口探测」这次机会还回去。
+     *
+     * 之前会话过期时打开的课表页只是登录跳转壳，探测会在空页面上白跑一次、
+     * 并把 phase 推进到整学期/逐周扫描；如果不在重新登录后重置，
+     * 真课表页加载时就会直接走慢速路线（现象：会话过期后再更新特别慢）。
+     */
+    fun resetApiChance() {
+        scan.phase = PHASE_API
+        scan.apiTried = false
+        scan.fastInjected = false
+        scan.apiNoGridRetries = 0
+        scan.apiAttempt++ // 之前挂的看门狗作废
     }
 
     /** 诊断 dump 写盘挪后台：主线程只负责把内容交出来，不等磁盘。 */
@@ -251,6 +270,38 @@ fun ImportScreen(
                 }
                 return@launch
             }
+            val pageCount = obj.optJSONObject("meta")?.optInt("pageCount", 0) ?: 0
+            // 页面一个课程格子都没有 → 这不是「接口数据对不上」，而是页面根本还不是课表
+            // （典型场景：教务会话过期，快速路径打开的课表页被踢成登录跳转壳）。
+            // 这种页面不能算一次接口失败：把机会还回去、等重新登录后的真课表页再探测。
+            // 否则唯一的一次探测机会被空页面用掉、phase 又被推进到扫描路线，
+            // 用户重新登录后必然退回逐周扫描 —— 这就是反复出现的「会话过期后更新变慢」。
+            if (pageCount <= 0 && scan.apiNoGridRetries < 2) {
+                withContext(Dispatchers.Main) {
+                    if (scan.finished || scan.phase != PHASE_API) return@withContext
+                    scan.apiNoGridRetries++
+                    scan.apiTried = false
+                    scan.apiAttempt++ // 当前这次探测的看门狗作废
+                    val waitAttempt = scan.apiAttempt
+                    scan.log(
+                        "接口探测：页面无课程格子（第 " + scan.apiNoGridRetries +
+                            " 次），判定为登录页/页面未就绪，保留接口机会等待课表页",
+                    )
+                    // 安全兜底：如果 10 秒内既没有新页面（登录跳转）、也没有重置，
+                    // 说明页面就是空的，别一直挂着——照常回退页面扫描。
+                    // 用户登录过程中每打开一次课表页都会 resetApiChance()，从而让这里失效。
+                    mainHandler.postDelayed({
+                        if (!scan.finished && scan.phase == PHASE_API &&
+                            scan.apiAttempt == waitAttempt
+                        ) {
+                            scan.log("接口探测：空页面等待超时，回退页面扫描")
+                            startFastScan()
+                        }
+                    }, 10000L)
+                }
+                return@launch
+            }
+            scan.log("接口探测：页面格子 " + pageCount + " 个")
             val text = obj.optString("text")
             val bigMode = obj.optBoolean("bigMode")
             val body = obj.optJSONObject("meta")?.optString("body").orEmpty()
@@ -629,6 +680,8 @@ fun ImportScreen(
                                     && !url.contains("login_slogin")
                                 ) {
                                     scan.tableRequested = true
+                                    // 登录后打开的才是真课表页：重置接口机会，别被上一次的失败连坐
+                                    resetApiChance()
                                     status = "登录成功，正在打开课表…"
                                     scan.log("提前跳转课表页")
                                     // 登录已完成，课表页是纯文字表格：关掉图片加载提速整页加载
@@ -664,8 +717,12 @@ fun ImportScreen(
                                 if (scan.fastPath && !url.contains("xskbcxMobile")) {
                                     scan.fastPath = false
                                     scan.tableRequested = false
+                                    // 会话过期说明刚才那个「课表页」只是登录跳转壳——
+                                    // 它可能已经白跑了一次探测并把 phase 推进到扫描路线。
+                                    // 先把接口机会重置，登录后的真课表页才会重新走直连接口。
+                                    resetApiChance()
                                     status = "登录会话已过期，请重新登录…"
-                                    scan.log("快速路径会话失效，回退统一身份认证")
+                                    scan.log("快速路径会话失效，回退统一身份认证（重置接口探测机会）")
                                     // 回登录页要恢复图片：统一身份认证可能有验证码
                                     view.settings.loadsImagesAutomatically = true
                                     view.loadUrl(SchoolEndpoints.SSO_LOGIN)
@@ -696,6 +753,7 @@ fun ImportScreen(
                                 }
                                 if (!scan.tableRequested && !url.contains("xskbcxMobile")) {
                                     scan.tableRequested = true
+                                    resetApiChance()
                                     status = "登录成功，正在打开课表…"
                                     // 同上：登录页之后不再需要图片
                                     view.settings.loadsImagesAutomatically = false
@@ -707,16 +765,20 @@ fun ImportScreen(
                                     PHASE_API -> {
                                         if (!scan.apiTried) {
                                             scan.apiTried = true
+                                            val attempt = ++scan.apiAttempt
                                             status = "正在校验直连接口…"
-                                            scan.log("接口探测开始")
+                                            scan.log("接口探测开始（第 " + attempt + " 次尝试）")
                                             // 探测脚本自带「网格有课程格子才动手」的门，App 侧不再垫固定延时
                                             inject(ApiProbeJs.script)
                                             // 脚本自己最多等 15 秒网格就绪、再花时间请求接口，所以
                                             // App 侧的兜底必须比它晚（否则慢页面上接口刚拿到结果就被
                                             // 自己掐断）。这里只当「脚本没动静」的看门狗：正常失败
-                                            // 由脚本回传 ok=false 触发，不会真等到 20 秒
+                                            // 由脚本回传 ok=false 触发，不会真等到 20 秒。
+                                            // 带上 attempt 代数：页面重载后重新探测时，旧看门狗不能再掐断新的。
                                             mainHandler.postDelayed({
-                                                if (!scan.finished && scan.phase == PHASE_API) {
+                                                if (!scan.finished && scan.phase == PHASE_API &&
+                                                    scan.apiAttempt == attempt
+                                                ) {
                                                     scan.log("接口探测超时（20s，脚本无响应），回退页面扫描")
                                                     startFastScan()
                                                 }
