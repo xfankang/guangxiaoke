@@ -36,18 +36,103 @@ object ApiProbeJs {
     var el = document.getElementById(id);
     return el ? String(el.value || '') : '';
   }
-  // 网格没渲染出来就抓不到页面基准。等的不只是「容器出现」——全新登录后
-  // 学校会话初始化慢，容器先出现、课程格子由 AJAX 填充，只查容器会拿到
-  // 空网格、校验白白失败一次退到慢路径。等网格里真的有课程格子再动手；
-  // 15 秒兜底（App 侧只挂一个更晚的看门狗，正常由这里的回传决定走向）。
+  // 等「课表网格容器」出现就往下走（6 秒兜底）。注意不能等「有课程格子」——
+  // 页面停在没有课的那一周时（例如上次逐周扫描把它留在第 1 周）本来就没有格子，
+  // 白等 15 秒之后仍然拿不到标尺，校验必然失败。真正的对策是下面的周次对齐。
   function gxkReady(fn) {
     var tries = 0;
     var timer = setInterval(function () {
       tries++;
-      if (document.querySelector('.Courses-content .course-hasContent')) {
+      if (document.querySelector('.Courses-content') || document.querySelector('ul.stage_k')) {
         clearInterval(timer); fn();
-      } else if (tries >= 300) { clearInterval(timer); fn(); }
+      } else if (tries >= 120) { clearInterval(timer); fn(); }
     }, 50);
+  }
+
+  // ---- 周次对齐 ----
+  // 页面可能停在没有课的一周（典型：上一次逐周扫描把状态留在第 1 周，会话记住了）。
+  // 那样页面上一个格子都没有、没法给接口当比对标尺，校验必然失败、白退慢路径。
+  // 动手前先按正文里的「第N周 起/止日期」算出今天属于第几周，把页面直接跳到那一周。
+  function todayNum() {
+    var d = new Date();
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  }
+  function weekFromBodyDates(body) {
+    var re = /第\s*([0-9]{1,2})\s*周\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:\s*\/\s*([0-9]{4})-([0-9]{1,2})-([0-9]{1,2}))?/g;
+    var m, first = 0;
+    var today = todayNum();
+    while ((m = re.exec(body))) {
+      var w = parseInt(m[1], 10);
+      if (!(w >= 1 && w <= 30)) { continue; }
+      if (!first) { first = w; }
+      var d1 = parseInt(m[2], 10) * 10000 + parseInt(m[3], 10) * 100 + parseInt(m[4], 10);
+      var d2 = m[5] ? (parseInt(m[5], 10) * 10000 + parseInt(m[6], 10) * 100 + parseInt(m[7], 10)) : d1;
+      if (today >= d1 && today <= d2) { return w; }
+    }
+    return first;
+  }
+  function shownWeek() {
+    var w = parseInt(field('zs_hide'), 10);
+    if (w >= 1 && w <= 30) { return w; }
+    var m = /第\s*([0-9]{1,2})\s*周/.exec(document.body ? (document.body.innerText || '') : '');
+    var w2 = m ? parseInt(m[1], 10) : 0;
+    return (w2 >= 1 && w2 <= 30) ? w2 : 0;
+  }
+  function weekOptions() {
+    var found = {};
+    var selects = document.querySelectorAll('select');
+    for (var s = 0; s < selects.length; s++) {
+      var opts = selects[s].querySelectorAll('option');
+      for (var i = 0; i < opts.length; i++) {
+        var m = /^第\s*([0-9]{1,2})\s*周(?:\s|$)/.exec(txt(opts[i]));
+        var w = m ? parseInt(m[1], 10) : 0;
+        if (w >= 1 && w <= 30) { found[w] = { mode: 'select', select: selects[s], value: opts[i].value }; }
+      }
+    }
+    if (Object.keys(found).length) { return found; }
+    var all = document.querySelectorAll('li,span,div,a,button');
+    for (var j = 0; j < all.length; j++) {
+      var e = all[j];
+      if (e.children && e.children.length > 1) { continue; }
+      var m2 = /^第\s*([0-9]{1,2})\s*周(?:\s|$)/.exec(txt(e));
+      var w2 = m2 ? parseInt(m2[1], 10) : 0;
+      if (w2 >= 1 && w2 <= 30 && !found[w2]) { found[w2] = { mode: 'click', el: e }; }
+    }
+    return found;
+  }
+  function waitWeek(w, cb) {
+    var tries = 0;
+    var t = setInterval(function () {
+      tries++;
+      if (shownWeek() === w) { clearInterval(t); cb(true); }
+      else if (tries >= 120) { clearInterval(t); cb(false); }
+    }, 50);
+  }
+  function alignWeek(fn) {
+    var body = document.body ? (document.body.innerText || '') : '';
+    var target = weekFromBodyDates(body);
+    var cur = shownWeek();
+    if (!target || cur === target) { fn(); return; }
+    var opts = weekOptions();
+    var opt = opts[target];
+    if (!opt) { fn(); return; }
+    try {
+      if (opt.mode === 'select') {
+        opt.select.value = opt.value;
+        opt.select.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        opt.el.click();
+      }
+    } catch (e) { fn(); return; }
+    waitWeek(target, function (ok) {
+      if (!ok) { fn(); return; }
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        if (document.querySelector('.Courses-content .course-hasContent')) { clearInterval(t); fn(); }
+        else if (tries >= 120) { clearInterval(t); fn(); }
+      }, 50);
+    });
   }
 
   // 与 Kotlin 侧 ZfsoftParser.looksLikeCourseList 同口径：名字 + 星期 + 节次齐了才算课表记录
@@ -120,7 +205,8 @@ object ApiProbeJs {
       body: body,
       pageCount: pageCells.length,
       unit: (contentH > 0 && ulCount > 0) ? contentH / ulCount : 0,
-      perRow: (onePerRow + twoPerRow === 0) ? ((ulCount > 0 && ulCount <= 6) ? 2 : 1) : (twoPerRow > onePerRow ? 2 : 1)
+      perRow: (onePerRow + twoPerRow === 0) ? ((ulCount > 0 && ulCount <= 6) ? 2 : 1) : (twoPerRow > onePerRow ? 2 : 1),
+      displayedWeek: shownWeek()
     };
 
     function scoreOf(apiText) {
@@ -229,7 +315,8 @@ object ApiProbeJs {
     }
   }
 
-  gxkReady(main);
+  // 周次对齐会异步等页面刷新，对齐完再抓格子；对齐失败也照常继续（校验失败会正常回退）
+  gxkReady(function () { alignWeek(main); });
 })();
 """.trimIndent()
 }

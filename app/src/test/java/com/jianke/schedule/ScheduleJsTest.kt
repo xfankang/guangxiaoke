@@ -60,12 +60,28 @@ class ScheduleJsTest {
         assertTrue(ApiProbeJs.script.contains("gxkReady"))
     }
 
-    /** 接口探测的门必须等「真格子」出现；只等容器会在全新登录的慢页面上拿空网格白跑一次校验。 */
+    /**
+     * 接口探测动手前必须先做「周次对齐」。
+     *
+     * 页面可能停在没有课的一周（实测：会话过期重新登录后停在 `zs_hide=1` 的第 1 周，
+     * 而本学期最早从第 4 周才有课）——空周没有任何格子可以当比对标尺，
+     * 接口校验必然失败并退回慢速扫描。所以不能只「等格子出现」，
+     * 要先按正文日期算出今天属于第几周、把页面跳过去再抓基准。
+     */
     @Test
-    fun apiProbeGateWaitsForRealCells() {
-        assertTrue(ApiProbeJs.script.contains("document.querySelector('.Courses-content .course-hasContent')"))
-        assertTrue(ApiProbeJs.script.contains("tries >= 300"))
-        assertFalse(ApiProbeJs.script.contains("tries >= 100"))
+    fun apiProbeAlignsWeekBeforeCapturingBaseline() {
+        assertTrue(ApiProbeJs.script.contains("function alignWeek"))
+        assertTrue(ApiProbeJs.script.contains("function weekFromBodyDates"))
+        assertTrue(ApiProbeJs.script.contains("function weekOptions"))
+        assertTrue(ApiProbeJs.script.contains("function shownWeek"))
+        assertTrue(ApiProbeJs.script.contains("gxkReady(function () { alignWeek(main); })"))
+        // 就绪门等的是网格「容器」（空周也有容器），不再死等课程格子
+        assertTrue(
+            ApiProbeJs.script.contains(
+                "document.querySelector('.Courses-content') || document.querySelector('ul.stage_k')",
+            ),
+        )
+        assertFalse(ApiProbeJs.script.contains("tries >= 300"))
     }
 
     /** 探测收集课程数组必须与 ZfsoftParser 同口径（kbList 之外还有 sjkList 等），并发发出。 */
