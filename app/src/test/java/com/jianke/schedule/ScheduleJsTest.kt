@@ -74,7 +74,9 @@ class ScheduleJsTest {
         assertTrue(ApiProbeJs.script.contains("function weekFromBodyDates"))
         assertTrue(ApiProbeJs.script.contains("function weekOptions"))
         assertTrue(ApiProbeJs.script.contains("function shownWeek"))
-        assertTrue(ApiProbeJs.script.contains("gxkReady(function () { alignWeek(main); })"))
+        // 启动链路：就绪 → 周次对齐 → 抓基准，中间穿插心跳
+        assertTrue(ApiProbeJs.script.contains("alignWeek(function ()"))
+        assertTrue(ApiProbeJs.script.contains("main();"))
         // 就绪门等的是网格「容器」（空周也有容器），不再死等课程格子
         assertTrue(
             ApiProbeJs.script.contains(
@@ -82,6 +84,22 @@ class ScheduleJsTest {
             ),
         )
         assertFalse(ApiProbeJs.script.contains("tries >= 300"))
+    }
+
+    /**
+     * 探测脚本必须发心跳。
+     *
+     * 页面停在没有课的一周时，「等网格 + 周次对齐 + 6 个接口请求」很容易超过 App 侧
+     * 的看门狗时长；旧实现固定 20 秒硬切，结果回传时 phase 已经推进、被直接丢弃，
+     * 表现是「接口既没报错也没成功、直接掉进扫描」。心跳让 App 能按需续期。
+     */
+    @Test
+    fun apiProbeSendsHeartbeats() {
+        assertTrue(ApiProbeJs.script.contains("function hb(stage)"))
+        assertTrue(ApiProbeJs.script.contains("hb('injected')"))
+        assertTrue(ApiProbeJs.script.contains("hb('grid-ready')"))
+        assertTrue(ApiProbeJs.script.contains("hb('week-aligned:'"))
+        assertTrue(ApiProbeJs.script.contains("hb('requesting:'"))
     }
 
     /** 探测收集课程数组必须与 ZfsoftParser 同口径（kbList 之外还有 sjkList 等），并发发出。 */

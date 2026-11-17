@@ -22,6 +22,12 @@ object ApiProbeJs {
   function report(payload) {
     try { window.GXKBridge.post('api', String(payload)); } catch (e) { }
   }
+  // 心跳：告诉 App「脚本还活着、别掐断」。页面停在没有课的一周时，就绪等待 +
+  // 周次对齐 + 6 个接口请求可能超过 20 秒，旧实现会被 App 的看门狗提前掐断，
+  // 结果回传时 phase 已经推进、被直接丢弃 —— 表现就是「接口从没失败过，但也从没成功过」。
+  function hb(stage) {
+    report(JSON.stringify({ hb: stage }));
+  }
   function txt(el) {
     if (!el) { return ''; }
     var t = el.innerText || el.textContent || '';
@@ -278,6 +284,7 @@ object ApiProbeJs {
     }
 
     // 全部尝试并发发出：串行等 6 个接口要 1.5~2.5s，并发只等最慢的那个
+    hb('requesting:' + pageCells.length + 'cells');
     var results = [];
     var settled = 0;
     function finishProbe() {
@@ -316,7 +323,14 @@ object ApiProbeJs {
   }
 
   // 周次对齐会异步等页面刷新，对齐完再抓格子；对齐失败也照常继续（校验失败会正常回退）
-  gxkReady(function () { alignWeek(main); });
+  hb('injected');
+  gxkReady(function () {
+    hb('grid-ready');
+    alignWeek(function () {
+      hb('week-aligned:' + shownWeek());
+      main();
+    });
+  });
 })();
 """.trimIndent()
 }

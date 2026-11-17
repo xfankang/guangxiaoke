@@ -94,6 +94,10 @@ private const val PHASE_SLOW = 2
     var apiAttempt = 0
     /** 「页面还没渲染出课表」的免费重试次数：这种页面不算接口失败，不消耗机会。 */
     var apiNoGridRetries = 0
+    /** 探测是否已回传最终结果（回传后就不再重试）。 */
+    var apiReported = false
+    /** 页面重载后重新探测的次数（周次对齐若触发整页刷新会杀掉脚本，需要再给机会）。 */
+    var apiRetries = 0
     var fastInjected = false
     val byWeek = LinkedHashMap<Int, List<Course>>()
     var stale = 0
@@ -171,8 +175,11 @@ fun ImportScreen(
         scan.apiTried = false
         scan.fastInjected = false
         scan.apiNoGridRetries = 0
+        scan.apiReported = false
+        scan.apiRetries = 0
         scan.apiAttempt++ // 之前挂的看门狗作废
     }
+
 
     /** 诊断 dump 写盘挪后台：主线程只负责把内容交出来，不等磁盘。 */
     fun dumpAsync(name: String, content: String) {
@@ -232,6 +239,23 @@ fun ImportScreen(
         }, 40000L)
     }
 
+    /**
+     * 接口探测看门狗：**按心跳续期**。
+     *
+     * 旧实现是注入后固定 20 秒掐断。但页面停在没有课的那一周时，脚本要等网格、
+     * 做周次对齐、再请求 6 个接口，很容易超过 20 秒 —— 回传到 App 时 phase 已经
+     * 被推进，消息被直接丢弃，表现就是「接口既没报错也没成功、直接掉进扫描」。
+     * 现在只要脚本还在发心跳就不断续期，真的没动静才掐。
+     */
+    fun armProbeWatchdog(attempt: Int) {
+        mainHandler.postDelayed({
+            if (!scan.finished && scan.phase == PHASE_API && scan.apiAttempt == attempt) {
+                scan.log("接口探测超时（20 秒没有心跳），回退页面扫描")
+                startFastScan()
+            }
+        }, 20000L)
+    }
+
     fun finishWithWeekMap() {
         if (scan.finished) return
         val merged = ScheduleMerger.merge(scan.byWeek)
@@ -254,6 +278,7 @@ fun ImportScreen(
      */
     fun handleApi(payload: String) {
         if (scan.finished) return
+        scan.apiReported = true
         apiProbeRaw = payload
         dumpAsync("api_probe.json", payload)
         // 接口返回可能几百 KB：JSON 解析 + 双向校验放后台线程，主线程只收结果
@@ -464,7 +489,20 @@ fun ImportScreen(
     val handleMessage: (String, String) -> Unit = { kind, payload ->
         when (kind) {
             // 超时或回退后到达的旧回调必须丢弃，不能覆盖当前阶段的结果。
-            "api" -> if (scan.phase == PHASE_API) handleApi(payload)
+            "api" -> {
+                val hb = runCatching { JSONObject(payload).optString("hb") }.getOrNull().orEmpty()
+                if (hb.isNotEmpty()) {
+                    // 心跳：脚本还活着就续期看门狗，跑多久都不掐断
+                    scan.log("接口探测心跳：" + hb)
+                    if (scan.phase == PHASE_API) armProbeWatchdog(scan.apiAttempt)
+                } else if (scan.phase == PHASE_API) {
+                    handleApi(payload)
+                } else {
+                    // 迟到的结果：阶段已经变了，不参与导入，但留着让用户能复制出诊断
+                    apiProbeRaw = payload
+                    scan.log("接口探测结果迟到（阶段已变），仅保留诊断")
+                }
+            }
             "fullscan" -> if (scan.phase == PHASE_FAST) handleFullScan(payload)
             "scrape" -> if (scan.phase == PHASE_SLOW) handleScrape(payload)
             "nav" -> if (scan.phase == PHASE_SLOW) handleNav(payload)
@@ -763,26 +801,24 @@ fun ImportScreen(
                                 if (!url.contains("xskbcxMobile")) return
                                 when (scan.phase) {
                                     PHASE_API -> {
-                                        if (!scan.apiTried) {
+                                        // 页面重载后允许重新探测：周次对齐若触发整页刷新会杀掉脚本，
+                                        // 新页面上得再来一次。但要防死循环——最多补 3 次。
+                                        val canRetry = !scan.apiReported && scan.apiRetries < 3
+                                        if (!scan.apiTried || canRetry) {
+                                            if (scan.apiTried) {
+                                                scan.apiRetries++
+                                                scan.log(
+                                                    "页面重载且探测未回传，重新探测（第 " +
+                                                        scan.apiRetries + " 次）",
+                                                )
+                                            }
                                             scan.apiTried = true
                                             val attempt = ++scan.apiAttempt
                                             status = "正在校验直连接口…"
                                             scan.log("接口探测开始（第 " + attempt + " 次尝试）")
-                                            // 探测脚本自带「网格有课程格子才动手」的门，App 侧不再垫固定延时
                                             inject(ApiProbeJs.script)
-                                            // 脚本自己最多等 15 秒网格就绪、再花时间请求接口，所以
-                                            // App 侧的兜底必须比它晚（否则慢页面上接口刚拿到结果就被
-                                            // 自己掐断）。这里只当「脚本没动静」的看门狗：正常失败
-                                            // 由脚本回传 ok=false 触发，不会真等到 20 秒。
-                                            // 带上 attempt 代数：页面重载后重新探测时，旧看门狗不能再掐断新的。
-                                            mainHandler.postDelayed({
-                                                if (!scan.finished && scan.phase == PHASE_API &&
-                                                    scan.apiAttempt == attempt
-                                                ) {
-                                                    scan.log("接口探测超时（20s，脚本无响应），回退页面扫描")
-                                                    startFastScan()
-                                                }
-                                            }, 20000L)
+                                            // 看门狗按心跳续期：脚本还活着就一直给它时间
+                                            armProbeWatchdog(attempt)
                                         } else {
                                             startFastScan()
                                         }
