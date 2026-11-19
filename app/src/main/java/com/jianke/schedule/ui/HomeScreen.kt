@@ -461,7 +461,7 @@ private fun dateRangeOf(dates: List<LocalDate?>): String? {
  * 每格会变成 63dp 宽的大方块，课名缩在中间、整屏像一堆色块，很丑。
  * 这里限制在 7 列基准的 1.2 倍以内，剩下的宽度两侧平分留白。
  */
-private const val FIVE_DAY_WIDTH_RATIO = 1.2f
+private const val FIVE_DAY_WIDTH_RATIO = 1.3f
 
 /** 课表里每一天的列宽。每列各留一份 CellGap；5 天视图限宽，避免格子被拉成大方块。 */
 private fun dayColumnWidth(maxWidth: Dp, dayCount: Int): Dp {
