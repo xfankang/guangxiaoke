@@ -49,4 +49,30 @@ class ScheduleCodecTest {
     fun legacyApiSourceIsRejected() {
         assertNull(ScheduleCodec.decode(JSONObject().put("source", "api")))
     }
+
+    @Test
+    fun roundTripKeepsManualSemesterCorrection() {
+        val base = schedule(course())
+        val original = base.copy(
+            semester = base.semester.copy(manualStartDate = "2026-09-07", manualTotalWeeks = 18),
+        )
+        val restored = ScheduleCodec.decode(JSONObject(ScheduleCodec.encode(original)))
+        assertEquals(original, restored)
+        assertEquals("2026-09-07", restored!!.semester.effectiveStartDate)
+        assertEquals(18, restored.semester.effectiveTotalWeeks)
+    }
+
+    /** 旧版本写出的 JSON 没有校正字段：读出来按「未校正」处理，不需要数据迁移。 */
+    @Test
+    fun legacyJsonWithoutManualFieldsFallsBackToAuto() {
+        val json = JSONObject(ScheduleCodec.encode(schedule(course())))
+        val semester = json.getJSONObject("semester")
+        semester.remove("manualStartDate")
+        semester.remove("manualTotalWeeks")
+        val decoded = ScheduleCodec.decode(json)!!
+        assertEquals("", decoded.semester.manualStartDate)
+        assertEquals(0, decoded.semester.manualTotalWeeks)
+        assertEquals(20, decoded.semester.effectiveTotalWeeks)
+        assertEquals("2026-08-31", decoded.semester.effectiveStartDate)
+    }
 }

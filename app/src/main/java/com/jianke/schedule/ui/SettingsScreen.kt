@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,8 +22,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.jianke.schedule.BuildConfig
+import com.jianke.schedule.data.AppRelease
 import com.jianke.schedule.data.EasterEgg
 import com.jianke.schedule.data.Prefs
+import com.jianke.schedule.data.Schedule
+import com.jianke.schedule.data.ScheduleBackup
+import com.jianke.schedule.data.ScheduleStore
+import com.jianke.schedule.data.ScheduleWeek
+import com.jianke.schedule.data.UpdateChecker
 import com.jianke.schedule.data.Wallpaper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,10 +44,33 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Image
 import top.yukonga.miuix.kmp.icon.extended.ListView
+import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.extended.Update
+import top.yukonga.miuix.kmp.icon.extended.Weeks
 import top.yukonga.miuix.kmp.icon.extended.WorldClock
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.time.DayOfWeek
+import java.time.LocalDate
 
 private val DARK_TABS = listOf("跟随系统", "浅色", "深色")
+
+/** 手动检查更新的状态。 */
+private sealed interface CheckState {
+    data object Idle : CheckState
+    data object Checking : CheckState
+    data object Latest : CheckState
+    data class Newer(val release: AppRelease) : CheckState
+    data object Failed : CheckState
+}
+
+/** 检查更新的状态文案。 */
+private fun checkSummary(state: CheckState): String = when (state) {
+    CheckState.Idle -> "当前版本 v" + BuildConfig.VERSION_NAME
+    CheckState.Checking -> "正在检查…"
+    CheckState.Latest -> "已是最新（v" + BuildConfig.VERSION_NAME + "）"
+    is CheckState.Newer -> "发现新版本 v" + state.release.versionName
+    CheckState.Failed -> "检查失败，请检查网络后再试"
+}
 
 @Composable
 fun SettingsScreen(
@@ -52,6 +84,14 @@ fun SettingsScreen(
     hasWallpaper: Boolean,
     onWallpaperChanged: () -> Unit,
     onWallpaperTransform: (Float, Float, Float) -> Unit,
+    schedule: Schedule?,
+    showWeekend: Boolean,
+    onShowWeekendChange: (Boolean) -> Unit,
+    autoCheckUpdates: Boolean,
+    onAutoCheckUpdatesChange: (Boolean) -> Unit,
+    onSemesterChange: (manualStartDate: String, manualTotalWeeks: Int) -> Unit,
+    onSemesterReset: () -> Unit,
+    onScheduleRestored: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -75,6 +115,11 @@ fun SettingsScreen(
     var prevScale by remember { mutableStateOf(1f) }
     var prevFracX by remember { mutableStateOf(0f) }
     var prevFracY by remember { mutableStateOf(0f) }
+    // 数据分区（备份 / 恢复）与更新检查的状态
+    var backupHint by remember { mutableStateOf("") }
+    var pendingRestore by remember { mutableStateOf<Schedule?>(null) }
+    var showSemesterDialog by remember { mutableStateOf(false) }
+    var checkState by remember { mutableStateOf<CheckState>(CheckState.Idle) }
 
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -111,11 +156,82 @@ fun SettingsScreen(
         }
     }
 
-    // 页面固定住：一屏放得下就不滚动，拖动不再有上下移动
-    // （内容真的放不下的小屏 / 大字体场景，底部会被裁掉 —— 按需求优先固定）
+    // 导出备份：系统文件选择器（SAF），不需要存储权限
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri == null) {
+            backupHint = "已取消导出"
+            return@rememberLauncherForActivityResult
+        }
+        val current = schedule
+        if (current == null) {
+            backupHint = "还没有课表可备份"
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val text = ScheduleBackup.encode(current)
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write(text.toByteArray(Charsets.UTF_8))
+                    } ?: error("empty stream")
+                }.isSuccess
+            }
+            backupHint = if (ok) {
+                "已导出课表备份（" + current.courses.size + " 门课）"
+            } else {
+                "导出失败，请换一个位置再试"
+            }
+        }
+    }
+
+    // 恢复备份：先解析校验，再弹二次确认（绝不直接覆盖）
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) {
+            backupHint = "已取消恢复"
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val restored = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        ScheduleBackup.readFrom(input)
+                    }
+                }.getOrNull()
+            }
+            if (restored == null) {
+                backupHint = "这不是广小课的课表备份文件"
+            } else {
+                pendingRestore = restored
+            }
+        }
+    }
+
+    // 手动检查更新：失败只提示，不影响任何功能
+    fun checkForUpdate() {
+        if (checkState is CheckState.Checking) return
+        checkState = CheckState.Checking
+        scope.launch {
+            val release = UpdateChecker.fetchLatest()
+            Prefs.setLastUpdateCheckAt(context, System.currentTimeMillis())
+            checkState = when {
+                release == null -> CheckState.Failed
+                UpdateChecker.isNewer(release.versionName, BuildConfig.VERSION_NAME) ->
+                    CheckState.Newer(release)
+                else -> CheckState.Latest
+            }
+        }
+    }
+
+    // 分区变多以后一屏放不下面板：允许滚动（内容不满一屏时滚动位移恒为 0，
+    // 加上全局已关闭 overscroll，观感与原来「固定一屏」一致）
     Column(
         modifier = Modifier
-            .fillMaxSize(),
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
     ) {
         // 内容从玻璃顶栏下面开始（滚动时卡片从玻璃下穿过），首尾留出玻璃层的高度
         Spacer(Modifier.height(contentPadding.calculateTopPadding()))
@@ -230,6 +346,109 @@ fun SettingsScreen(
             )
         }
 
+        SectionHeader("课表")
+        SettingsCard {
+            val semester = schedule?.semester
+            val currentWeek = schedule?.let { ScheduleWeek.currentWeekOf(it) }
+            val semesterSummary = if (semester != null && currentWeek != null) {
+                "第 " + currentWeek + " 周 · 共 " + semester.effectiveTotalWeeks + " 周" +
+                    if (semester.hasManual) " · 已校正" else " · 自动识别"
+            } else {
+                "还没有课表"
+            }
+            SettingRow(
+                icon = MiuixIcons.Weeks,
+                title = "学期周次",
+                summary = semesterSummary,
+                onClick = { if (schedule != null) showSemesterDialog = true },
+                showChevron = true,
+            )
+            if (semester?.hasManual == true) {
+                TextButton(
+                    text = "恢复自动识别",
+                    onClick = { onSemesterReset() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            SettingRow(
+                icon = MiuixIcons.Background,
+                title = "显示周末",
+                summary = "关闭后周课表只显示周一至周五；今日课程不受影响",
+                trailing = { Switch(checked = showWeekend, onCheckedChange = onShowWeekendChange) },
+            )
+            Text(
+                text = "周次按开学日期推算；发现不对时点「学期周次」校正，校正不会改动课表内容。",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                modifier = Modifier.padding(start = 62.dp, bottom = 10.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+
+        SectionHeader("数据")
+        SettingsCard {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TextButton(
+                    text = "备份课表",
+                    onClick = {
+                        if (schedule == null) {
+                            backupHint = "还没有课表可备份"
+                        } else {
+                            exportLauncher.launch("广小课-课表-" + LocalDate.now() + ".json")
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "恢复课表",
+                    onClick = {
+                        // 各家文件管理器报的 mime 不统一，放宽到 common 三种
+                        importLauncher.launch(
+                            arrayOf("application/json", "text/plain", "application/octet-stream"),
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (backupHint.isNotBlank()) {
+                Text(
+                    text = backupHint,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                text = "备份文件只包含课表（不含壁纸和设置），可以拷到新手机上恢复。",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            Spacer(Modifier.height(2.dp))
+            SettingRow(
+                icon = MiuixIcons.Update,
+                title = "检查更新",
+                summary = checkSummary(checkState),
+                onClick = { checkForUpdate() },
+            )
+            val newer = checkState as? CheckState.Newer
+            if (newer != null) {
+                TextButton(
+                    text = "去 GitHub 下载 v" + newer.release.versionName,
+                    onClick = { openReleasePage(context, newer.release.pageUrl) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            SettingRow(
+                icon = MiuixIcons.Refresh,
+                title = "自动检查更新",
+                summary = "每天最多一次，只查询版本号，不上传任何数据",
+                trailing = {
+                    Switch(checked = autoCheckUpdates, onCheckedChange = onAutoCheckUpdatesChange)
+                },
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+
         SectionHeader("其他")
         SettingsCard {
             SettingRow(
@@ -277,6 +496,46 @@ fun SettingsScreen(
                 onWallpaperTransform(s, fx, fy)
                 hint = "背景构图已保存"
                 editing = null
+            },
+        )
+    }
+
+    // 学期周次校正：把「现在是第几周」折算成开学日期保存
+    val semesterSchedule = schedule
+    if (showSemesterDialog && semesterSchedule != null) {
+        SemesterCalibrationDialog(
+            currentWeek = ScheduleWeek.currentWeekOf(semesterSchedule),
+            totalWeeks = semesterSchedule.semester.effectiveTotalWeeks,
+            onDismiss = { showSemesterDialog = false },
+            onConfirm = { week, total ->
+                showSemesterDialog = false
+                val monday = LocalDate.now().with(DayOfWeek.MONDAY)
+                val start = monday.minusWeeks((week - 1).toLong()).toString()
+                onSemesterChange(start, total)
+            },
+        )
+    }
+
+    // 恢复确认：唯一会覆盖课表数据的入口
+    val restoring = pendingRestore
+    if (restoring != null) {
+        RestoreConfirmDialog(
+            courseCount = restoring.courses.size,
+            totalWeeks = restoring.semester.effectiveTotalWeeks,
+            onDismiss = { pendingRestore = null },
+            onConfirm = {
+                pendingRestore = null
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching { ScheduleStore.save(context, restoring) }.isSuccess
+                    }
+                    if (ok) {
+                        backupHint = "已恢复课表（" + restoring.courses.size + " 门课）"
+                        onScheduleRestored()
+                    } else {
+                        backupHint = "恢复失败：无法写入本地存储"
+                    }
+                }
             },
         )
     }

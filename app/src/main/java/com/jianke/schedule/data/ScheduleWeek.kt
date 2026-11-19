@@ -19,16 +19,17 @@ object ScheduleWeek {
      * 退回导入时刻记录的「第 N 周」标签快照——虽不随时间前进，但比错的周强。
      */
     fun currentWeekOf(schedule: Schedule, today: LocalDate = LocalDate.now()): Int {
-        val start = runCatching { LocalDate.parse(schedule.semester.startDate) }.getOrNull()
+        // 手动校正优先（effective*）：校正当周立刻生效，之后仍按日期自动前进
+        val start = runCatching { LocalDate.parse(schedule.semester.effectiveStartDate) }.getOrNull()
         if (start != null) {
             val days = ChronoUnit.DAYS.between(start, today)
             if (days >= 0) {
-                val total = maxOf(1, schedule.semester.totalWeeks)
+                val total = maxOf(1, schedule.semester.effectiveTotalWeeks)
                 return ((days / 7).toInt() + 1).coerceIn(1, total)
             }
             return 1
         }
-        val total = maxOf(1, schedule.semester.totalWeeks)
+        val total = maxOf(1, schedule.semester.effectiveTotalWeeks)
         return Regex("第\\s*([0-9]{1,2})\\s*周").find(schedule.semester.label)
             ?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(1, total) ?: 1
     }

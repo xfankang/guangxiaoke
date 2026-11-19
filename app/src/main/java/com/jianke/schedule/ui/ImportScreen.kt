@@ -196,7 +196,12 @@ fun ImportScreen(
         // JSON 编码 + 原子写盘是 IO：主线程只收结果更新状态，低配机上导入不再一顿一顿
         scope.launch(Dispatchers.IO) {
             val ok = try {
-                ScheduleStore.save(context, ScheduleBuilder.build(bodyText, courses, weeks))
+                // previous：同一学期重新导入时把用户手动校正过的学期周次带过去
+                val previous = runCatching { ScheduleStore.load(context) }.getOrNull()
+                ScheduleStore.save(
+                    context,
+                    ScheduleBuilder.build(bodyText, courses, weeks, previous = previous),
+                )
                 true
             } catch (e: Exception) {
                 false

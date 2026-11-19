@@ -2,6 +2,7 @@ package com.jianke.schedule
 
 import com.jianke.schedule.data.ScheduleBuilder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
@@ -67,5 +68,58 @@ class ScheduleBuilderTest {
             today = LocalDate.of(2026, 11, 14),
         )
         assertEquals("第 11 周", schedule.semester.label)
+    }
+
+    /** 同一学期重新导入：用户手动校正过的周次必须带过去，不能被「立即更新」冲掉。 */
+    @Test
+    fun keepsManualCorrectionOnReimportOfSameSemester() {
+        val first = ScheduleBuilder.build(
+            "第11周 2026-11-09/2026-11-15",
+            emptyList(),
+            today = LocalDate.of(2026, 11, 14),
+        )
+        val calibrated = first.copy(
+            semester = first.semester.copy(manualStartDate = "2026-09-01", manualTotalWeeks = 18),
+        )
+        val again = ScheduleBuilder.build(
+            "第11周 2026-11-09/2026-11-15",
+            emptyList(),
+            today = LocalDate.of(2026, 11, 14),
+            previous = calibrated,
+        )
+        assertEquals("2026-09-01", again.semester.manualStartDate)
+        assertEquals(18, again.semester.manualTotalWeeks)
+        assertTrue(again.semester.hasManual)
+    }
+
+    /** 换了学期（自动识别的开学日期变了）：上学期的校正必须丢弃，不能污染新学期。 */
+    @Test
+    fun dropsManualCorrectionWhenSemesterChanges() {
+        val previous = ScheduleBuilder.build(
+            "第11周 2026-11-09/2026-11-15",
+            emptyList(),
+            today = LocalDate.of(2026, 11, 14),
+        ).let {
+            it.copy(semester = it.semester.copy(manualStartDate = "2026-09-01", manualTotalWeeks = 18))
+        }
+        val nextSemester = ScheduleBuilder.build(
+            "第2周 2027-03-01/2027-03-07",
+            emptyList(),
+            today = LocalDate.of(2027, 3, 2),
+            previous = previous,
+        )
+        assertEquals("", nextSemester.semester.manualStartDate)
+        assertEquals(0, nextSemester.semester.manualTotalWeeks)
+    }
+
+    /** 两次都识别不出开学日期（空串）时视为同一学期：校正保留，否则用户每次更新都得重新校正。 */
+    @Test
+    fun keepsCorrectionWhenStartDateUnknownOnBothSides() {
+        val first = ScheduleBuilder.build("第7周\n周一", emptyList())
+        val calibrated = first.copy(
+            semester = first.semester.copy(manualStartDate = "2026-10-12", manualTotalWeeks = 18),
+        )
+        val again = ScheduleBuilder.build("第7周\n周一", emptyList(), previous = calibrated)
+        assertEquals("2026-10-12", again.semester.manualStartDate)
     }
 }

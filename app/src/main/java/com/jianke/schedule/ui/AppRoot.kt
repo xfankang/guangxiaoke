@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,11 +36,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.unit.dp
+import com.jianke.schedule.BuildConfig
+import com.jianke.schedule.data.AppRelease
 import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.ScheduleStore
+import com.jianke.schedule.data.SemesterInfo
+import com.jianke.schedule.data.UpdateChecker
 import com.jianke.schedule.data.Wallpaper
 import com.jianke.schedule.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
@@ -131,6 +137,24 @@ fun AppRoot() {
     // AGSL 折射需要 Android 13+；miuix-blur 自带降级，这里只负责把开关语义传下去
     val glassSupported = Build.VERSION.SDK_INT >= 33
 
+    // 周课表是否显示周末两列（设置页可切）
+    var showWeekend by remember { mutableStateOf(Prefs.showWeekend(context)) }
+    // 启动时是否自动检查更新
+    var autoCheckUpdates by remember { mutableStateOf(Prefs.autoCheckUpdates(context)) }
+    // 检查到的可用新版本；非空时弹一次窗
+    var pendingUpdate by remember { mutableStateOf<AppRelease?>(null) }
+    val scope = rememberCoroutineScope()
+
+    /** 改写学期的手动校正字段并落盘（写盘是 IO，失败不影响当前界面，下次启动仍读旧值）。 */
+    fun updateSemester(transform: (SemesterInfo) -> SemesterInfo) {
+        val current = schedule ?: return
+        val next = current.copy(semester = transform(current.semester))
+        schedule = next
+        scope.launch(Dispatchers.IO) {
+            runCatching { ScheduleStore.save(context, next) }
+        }
+    }
+
     if (importing) {
         AppTheme(darkOverride = darkOverride) {
             ImportScreen(
@@ -145,6 +169,21 @@ fun AppRoot() {
             )
         }
         return
+    }
+
+    // 启动时自动检查更新：每天最多一次；查不到（无网络 / GitHub 不可达）静默放过
+    LaunchedEffect(Unit) {
+        if (!Prefs.autoCheckUpdates(context)) return@LaunchedEffect
+        val last = Prefs.lastUpdateCheckAt(context)
+        if (System.currentTimeMillis() - last < UPDATE_CHECK_INTERVAL_MS) return@LaunchedEffect
+        val release = UpdateChecker.fetchLatest()
+        Prefs.setLastUpdateCheckAt(context, System.currentTimeMillis())
+        if (release != null &&
+            UpdateChecker.isNewer(release.versionName, BuildConfig.VERSION_NAME) &&
+            Prefs.lastPromptedVersion(context) != release.versionName
+        ) {
+            pendingUpdate = release
+        }
     }
 
     AppTheme(darkOverride = darkOverride) {
@@ -272,7 +311,12 @@ fun AppRoot() {
                                             (if (dock) DOCK_RESERVED_HEIGHT else 0.dp),
                                     )
                                     when (target) {
-                                        0 -> HomeScreen(schedule, contentPadding) { importing = true }
+                                        0 -> HomeScreen(
+                                            schedule = schedule,
+                                            contentPadding = contentPadding,
+                                            showWeekend = showWeekend,
+                                            onImport = { importing = true },
+                                        )
 
                                         1 -> SettingsScreen(
                                             contentPadding = contentPadding,
@@ -298,6 +342,38 @@ fun AppRoot() {
                                                 wpOffsetX = dx
                                                 wpOffsetY = dy
                                                 Prefs.setWallpaperTransform(context, s, dx, dy)
+                                            },
+                                            schedule = schedule,
+                                            showWeekend = showWeekend,
+                                            onShowWeekendChange = { value ->
+                                                showWeekend = value
+                                                Prefs.setShowWeekend(context, value)
+                                            },
+                                            autoCheckUpdates = autoCheckUpdates,
+                                            onAutoCheckUpdatesChange = { value ->
+                                                autoCheckUpdates = value
+                                                Prefs.setAutoCheckUpdates(context, value)
+                                            },
+                                            onSemesterChange = { manualStart, manualTotal ->
+                                                updateSemester { semester ->
+                                                    semester.copy(
+                                                        manualStartDate = manualStart,
+                                                        manualTotalWeeks = manualTotal,
+                                                    )
+                                                }
+                                            },
+                                            onSemesterReset = {
+                                                updateSemester { semester ->
+                                                    semester.copy(
+                                                        manualStartDate = "",
+                                                        manualTotalWeeks = 0,
+                                                    )
+                                                }
+                                            },
+                                            onScheduleRestored = {
+                                                schedule = runCatching {
+                                                    ScheduleStore.load(context)
+                                                }.getOrNull()
                                             },
                                         )
 
@@ -334,6 +410,27 @@ fun AppRoot() {
                     })
                 }
             }
+
+            // 发现新版本：每个版本只提示一次，跳浏览器下载（不做应用内安装）
+            val update = pendingUpdate
+            if (update != null) {
+                UpdateAvailableDialog(
+                    versionName = update.versionName,
+                    currentVersion = BuildConfig.VERSION_NAME,
+                    onLater = {
+                        Prefs.setLastPromptedVersion(context, update.versionName)
+                        pendingUpdate = null
+                    },
+                    onDownload = {
+                        Prefs.setLastPromptedVersion(context, update.versionName)
+                        pendingUpdate = null
+                        openReleasePage(context, update.pageUrl)
+                    },
+                )
+            }
         }
     }
 }
+
+/** 「每天最多检查一次」的节流间隔。 */
+private const val UPDATE_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L

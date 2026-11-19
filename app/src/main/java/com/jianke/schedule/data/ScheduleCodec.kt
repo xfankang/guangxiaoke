@@ -14,6 +14,9 @@ internal object ScheduleCodec {
             .put("label", schedule.semester.label)
             .put("startDate", schedule.semester.startDate)
             .put("totalWeeks", schedule.semester.totalWeeks)
+            // 手动校正字段：旧版本没有这两个键，读取时按默认值兜底
+            .put("manualStartDate", schedule.semester.manualStartDate)
+            .put("manualTotalWeeks", schedule.semester.manualTotalWeeks)
         root.put("semester", sem)
         root.put("updatedAt", schedule.updatedAt)
         root.put("periodTimes", JSONArray().apply {
@@ -48,6 +51,8 @@ internal object ScheduleCodec {
             label = semObj.optString("label"),
             startDate = semObj.optString("startDate"),
             totalWeeks = semObj.optInt("totalWeeks", 20).coerceIn(1, 30),
+            manualStartDate = semObj.optString("manualStartDate"),
+            manualTotalWeeks = semObj.optInt("manualTotalWeeks", 0).coerceIn(0, 30),
         )
         val periods = root.optJSONArray("periodTimes")?.let { arr ->
             (0 until arr.length()).mapNotNull { i ->

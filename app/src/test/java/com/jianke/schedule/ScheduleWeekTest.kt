@@ -83,4 +83,24 @@ class ScheduleWeekTest {
         val dates = weekDatesOf("2025-12-29", 2)
         assertEquals(LocalDate.of(2026, 1, 5), dates[0])
     }
+
+    /** 手动校正的开学日期优先于自动识别值（校正当周就要生效）。 */
+    @Test
+    fun manualStartDateOverridesAuto() {
+        val auto = scheduleOf("2026-11-09", "第 1 周")
+        val manual = auto.copy(
+            semester = auto.semester.copy(manualStartDate = "2026-11-02"),
+        )
+        assertEquals(2, currentWeekOf(manual, LocalDate.of(2026, 11, 9)))
+    }
+
+    /** 手动校正的总周数也参与夹取（学期实际只有 16 周时不要显示到 20）。 */
+    @Test
+    fun manualTotalWeeksClampsResult() {
+        val auto = scheduleOf("2026-11-09", "第 1 周", totalWeeks = 20)
+        val manual = auto.copy(
+            semester = auto.semester.copy(manualTotalWeeks = 3),
+        )
+        assertEquals(3, currentWeekOf(manual, LocalDate.of(2027, 3, 1)))
+    }
 }

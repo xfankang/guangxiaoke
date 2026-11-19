@@ -62,8 +62,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.jianke.schedule.data.ClassNow
 import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.Schedule
+import com.jianke.schedule.data.currentClassState
 import com.jianke.schedule.data.layoutDay
 import com.jianke.schedule.data.schoolBigPeriods
 import com.jianke.schedule.data.ScheduleWeek
@@ -86,6 +88,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
+private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
 private val ROW_COUNT = schoolBigPeriods.size
 private const val MODE_WEEK = 0
 private const val MODE_TODAY = 1
@@ -104,9 +107,15 @@ const val UPDATE_WARNING = "由于无法实现实时更新课表，为了防止�
     "建议同学们一周至少更新一次课表，保持课表的准确性！！！"
 
 @Composable
-fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () -> Unit) {
+fun HomeScreen(
+    schedule: Schedule?,
+    contentPadding: PaddingValues,
+    /** 周课表是否显示周末两列；今日课程不受影响（永远显示真实的今天）。 */
+    showWeekend: Boolean,
+    onImport: () -> Unit,
+) {
     var tab by remember { mutableIntStateOf(MODE_WEEK) }
-    val totalWeeks = (schedule?.semester?.totalWeeks ?: 1).coerceAtLeast(1)
+    val totalWeeks = (schedule?.semester?.effectiveTotalWeeks ?: 1).coerceAtLeast(1)
     // 当前周每天重算一次：进程跨周日午夜存活时（schedule 对象没变）也要翻到新的一周，
     // 否则「今日课程」还停留在上周的课，而日期高亮用的是新鲜的今天 —— 两套时间源打架
     val todayEpochDay = LocalDate.now().toEpochDay()
@@ -151,8 +160,13 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
                 when (mode) {
                     MODE_WEEK -> Column(modifier = Modifier.fillMaxSize()) {
                         val shownWeek = pagerState.currentPage + 1
-                        val dates = ScheduleWeek.weekDatesOf(schedule.semester.startDate, shownWeek)
+                        val dayCount = if (showWeekend) 7 else 5
+                        val dates = ScheduleWeek.weekDatesOf(
+                            schedule.semester.effectiveStartDate,
+                            shownWeek,
+                        ).take(dayCount)
                         val weekCourses = schedule.coursesOfWeek(shownWeek)
+                            .filter { it.dayOfWeek <= dayCount }
                         WeekNavBar(
                             week = shownWeek,
                             totalWeeks = totalWeeks,
@@ -187,12 +201,9 @@ fun HomeScreen(schedule: Schedule?, contentPadding: PaddingValues, onImport: () 
                                 .padding(bottom = contentPadding.calculateBottomPadding()),
                         ) { page ->
                             WeekGrid(
-                                courses = schedule.coursesOfWeek(page + 1),
-                                todayIndex = if (page + 1 == currentWeek) {
-                                    LocalDate.now().dayOfWeek.value - 1
-                                } else {
-                                    -1
-                                },
+                                courses = schedule.coursesOfWeek(page + 1)
+                                    .filter { it.dayOfWeek <= dayCount },
+                                dayCount = dayCount,
                                 highlight = if (detailVisible) selectedCourse else null,
                                 onCourseClick = { course, rect ->
                                     val now = System.currentTimeMillis()
@@ -443,9 +454,9 @@ private fun dateRangeOf(dates: List<LocalDate?>): String? {
     return first.format(RANGE_FORMAT) + " – " + last.format(RANGE_FORMAT)
 }
 
-/** 课表里每一天的列宽。7 列各留一份 CellGap，加起来正好铺满可用宽度。 */
-private fun dayColumnWidth(maxWidth: Dp): Dp =
-    (maxWidth - Ui.PeriodGutter - Ui.CellGap * 7) / 7
+/** 课表里每一天的列宽。每列各留一份 CellGap，加起来正好铺满可用宽度（周末折叠时是 5 列）。 */
+private fun dayColumnWidth(maxWidth: Dp, dayCount: Int): Dp =
+    (maxWidth - Ui.PeriodGutter - Ui.CellGap * dayCount) / dayCount
 
 /** 表头：星期几 + 日期，今天那一列用主题色标出来。 */
 @Composable
@@ -459,7 +470,7 @@ private fun DayHeader(dates: List<LocalDate?>, isCurrentWeek: Boolean) {
             .fillMaxWidth()
             .padding(horizontal = Ui.Page),
     ) {
-        val dayWidth = dayColumnWidth(maxWidth)
+        val dayWidth = dayColumnWidth(maxWidth, dates.size)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -556,7 +567,7 @@ private fun gutterColor(): Color = if (LocalWallpaperActive.current) {
 @Composable
 private fun WeekGrid(
     courses: List<Course>,
-    todayIndex: Int,
+    dayCount: Int,
     highlight: Course?,
     onCourseClick: (Course, Rect) -> Unit,
 ) {
@@ -573,7 +584,7 @@ private fun WeekGrid(
             .padding(horizontal = Ui.Page),
     ) {
         val rowHeight: Dp = maxHeight / ROW_COUNT
-        val dayWidth: Dp = dayColumnWidth(maxWidth)
+        val dayWidth: Dp = dayColumnWidth(maxWidth, dayCount)
         val step: Dp = dayWidth + Ui.CellGap
         Box(modifier = Modifier.fillMaxSize()) {
             schoolBigPeriods.forEach { bp ->
@@ -609,7 +620,7 @@ private fun WeekGrid(
                             color = gutterColor(),
                         )
                     }
-                    for (d in 0 until 7) {
+                    for (d in 0 until dayCount) {
                         Box(
                             modifier = Modifier
                                 .padding(horizontal = Ui.CellGap / 2)
@@ -624,7 +635,7 @@ private fun WeekGrid(
                 }
             }
             // 按天分组摆放：同一天里时间重叠的课并排，不重叠的照旧占满整列
-            (1..7).forEach { day ->
+            (1..dayCount).forEach { day ->
                 val placed = layoutDay(courses.filter { it.dayOfWeek == day })
                 placed.forEach { p ->
                     val course = p.course
@@ -872,6 +883,33 @@ private fun TodayTimeline(
                     " · 共 " + todayCourses.size + " 门课",
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onBackgroundVariant,
+            )
+        }
+
+        // 下一节 / 正在上课的倒计时：复用下面每 30 秒刷新一次的 now，不额外起定时器
+        val classNow = currentClassState(todayCourses, now)
+        val countdown = when (classNow) {
+            is ClassNow.Ongoing ->
+                "正在上课 · " + classNow.course.name + " · 还有 " + classNow.minutesLeft + " 分钟"
+
+            is ClassNow.Upcoming ->
+                "下一节 " + classNow.start.format(TIME_FORMAT) + " · " + classNow.course.name +
+                    " · 还有 " + classNow.minutesLeft + " 分钟"
+
+            else -> null
+        }
+        if (countdown != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = countdown,
+                style = MiuixTheme.textStyles.footnote1,
+                color = if (classNow is ClassNow.Ongoing) {
+                    MiuixTheme.colorScheme.primary
+                } else {
+                    MiuixTheme.colorScheme.onBackgroundVariant
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.height(12.dp))
