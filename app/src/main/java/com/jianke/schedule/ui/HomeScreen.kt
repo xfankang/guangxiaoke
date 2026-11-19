@@ -454,9 +454,30 @@ private fun dateRangeOf(dates: List<LocalDate?>): String? {
     return first.format(RANGE_FORMAT) + " – " + last.format(RANGE_FORMAT)
 }
 
-/** 课表里每一天的列宽。每列各留一份 CellGap，加起来正好铺满可用宽度（周末折叠时是 5 列）。 */
-private fun dayColumnWidth(maxWidth: Dp, dayCount: Int): Dp =
-    (maxWidth - Ui.PeriodGutter - Ui.CellGap * dayCount) / dayCount
+/**
+ * 5 天视图每列相对 7 列基准宽度的倍数上限。
+ *
+ * 7 天时列宽很窄，看着像「课表条」；隐藏周末后如果硬把 5 列撑满整屏，
+ * 每格会变成 63dp 宽的大方块，课名缩在中间、整屏像一堆色块，很丑。
+ * 这里限制在 7 列基准的 1.2 倍以内，剩下的宽度两侧平分留白。
+ */
+private const val FIVE_DAY_WIDTH_RATIO = 1.2f
+
+/** 课表里每一天的列宽。每列各留一份 CellGap；5 天视图限宽，避免格子被拉成大方块。 */
+private fun dayColumnWidth(maxWidth: Dp, dayCount: Int): Dp {
+    val fill = (maxWidth - Ui.PeriodGutter - Ui.CellGap * dayCount) / dayCount
+    if (dayCount >= 7) return fill
+    val sevenDay = (maxWidth - Ui.PeriodGutter - Ui.CellGap * 7) / 7
+    return minOf(fill, sevenDay * FIVE_DAY_WIDTH_RATIO)
+}
+
+/** 课表整体（节次栏 + 各天）在可用宽度里的左偏移：5 天视图限宽后整体居中，两侧留白平分。 */
+private fun gridLeftOffset(maxWidth: Dp, dayCount: Int): Dp {
+    if (dayCount >= 7) return 0.dp
+    val dayWidth = dayColumnWidth(maxWidth, dayCount)
+    val total = Ui.PeriodGutter + dayWidth * dayCount + Ui.CellGap * (dayCount - 1)
+    return ((maxWidth - total) / 2f).coerceAtLeast(0.dp)
+}
 
 /** 表头：星期几 + 日期，今天那一列用主题色标出来。 */
 @Composable
@@ -471,6 +492,7 @@ private fun DayHeader(dates: List<LocalDate?>, isCurrentWeek: Boolean) {
             .padding(horizontal = Ui.Page),
     ) {
         val dayWidth = dayColumnWidth(maxWidth, dates.size)
+        val leftOffset = gridLeftOffset(maxWidth, dates.size)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -482,6 +504,7 @@ private fun DayHeader(dates: List<LocalDate?>, isCurrentWeek: Boolean) {
                 .padding(vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Spacer(Modifier.width(leftOffset))
             Spacer(Modifier.width(Ui.PeriodGutter))
             dates.forEachIndexed { index, date ->
                 val isToday = isCurrentWeek && date != null && date == today
@@ -585,6 +608,7 @@ private fun WeekGrid(
     ) {
         val rowHeight: Dp = maxHeight / ROW_COUNT
         val dayWidth: Dp = dayColumnWidth(maxWidth, dayCount)
+        val leftOffset: Dp = gridLeftOffset(maxWidth, dayCount)
         val step: Dp = dayWidth + Ui.CellGap
         Box(modifier = Modifier.fillMaxSize()) {
             schoolBigPeriods.forEach { bp ->
@@ -595,6 +619,7 @@ private fun WeekGrid(
                         .offset(y = rowHeight * bp.row),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Spacer(Modifier.width(leftOffset))
                     Column(
                         modifier = Modifier.width(Ui.PeriodGutter),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -643,7 +668,7 @@ private fun WeekGrid(
                     // 这样上下相邻的两门课之间也会留出缝，不会糊成一片。
                     val fullW = dayWidth + Ui.CellGap
                     val laneW = fullW / p.lanes
-                    val x = Ui.PeriodGutter + step * (day - 1) + laneW * p.lane
+                    val x = leftOffset + Ui.PeriodGutter + step * (day - 1) + laneW * p.lane
                     val y = rowHeight * p.startRow
                     val h = rowHeight * (p.endRow - p.startRow + 1)
                     // 浮窗显示期间，来源格子轻微放大，点浮窗的来去有了「从哪来」的反馈

@@ -364,11 +364,13 @@ fun SettingsScreen(
                 showChevron = true,
             )
             if (semester?.hasManual == true) {
+                Spacer(Modifier.height(4.dp))
                 TextButton(
                     text = "恢复自动识别",
                     onClick = { onSemesterReset() },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.height(2.dp))
             }
             SettingRow(
                 icon = MiuixIcons.Background,
@@ -382,11 +384,13 @@ fun SettingsScreen(
                 color = MiuixTheme.colorScheme.onBackgroundVariant,
                 modifier = Modifier.padding(start = 62.dp, bottom = 10.dp),
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
         SectionHeader("数据")
         SettingsCard {
+            // 按钮行贴着卡片顶边会显得很挤：上下各留一小段呼吸
+            Spacer(Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
                 TextButton(
                     text = "备份课表",
@@ -410,20 +414,21 @@ fun SettingsScreen(
                     modifier = Modifier.weight(1f),
                 )
             }
+            Spacer(Modifier.height(6.dp))
             if (backupHint.isNotBlank()) {
                 Text(
                     text = backupHint,
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.primary,
                 )
+                Spacer(Modifier.height(4.dp))
             }
             Text(
                 text = "备份文件只包含课表（不含壁纸和设置），可以拷到新手机上恢复。",
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onBackgroundVariant,
-                modifier = Modifier.padding(bottom = 8.dp),
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(10.dp))
             SettingRow(
                 icon = MiuixIcons.Update,
                 title = "检查更新",
@@ -446,7 +451,7 @@ fun SettingsScreen(
                     Switch(checked = autoCheckUpdates, onCheckedChange = onAutoCheckUpdatesChange)
                 },
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
         SectionHeader("其他")
