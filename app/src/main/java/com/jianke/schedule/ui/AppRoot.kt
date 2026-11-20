@@ -370,11 +370,6 @@ fun AppRoot() {
                                                     )
                                                 }
                                             },
-                                            onScheduleRestored = {
-                                                schedule = runCatching {
-                                                    ScheduleStore.load(context)
-                                                }.getOrNull()
-                                            },
                                         )
 
                                         else -> AboutScreen(contentPadding)

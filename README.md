@@ -18,7 +18,6 @@
 - **课程详情**：点课程在手指附近弹出浮层（课程名 / 地点 / 教师 / 时间），再点同一位置收起
 - **下一节倒计时**：今日课程页显示「下一节 10:20 · 高等数学 · 还有 12 分钟」/「正在上课 · 还有 25 分钟」
 - **学期周次校正**：自动反推的开学日期不对时，在设置里选「现在是第几周」校正（折算成日期保存）
-- **备份与恢复**：课表可导出为文件、换手机一键恢复；只含课表，不含壁纸和设置
 - **周末折叠**：周课表可只显示周一至周五（今日课程不受影响）
 - **检查更新**：每天最多一次查询 GitHub 版本号，发现新版只跳浏览器下载（不新增任何权限）
 - **悬浮 Dock 栏**：胶囊式 Dock，点按带滑动指示器动画，可在设置里切回贴边状态栏
@@ -73,7 +72,6 @@ app/src/main/java/com/jianke/schedule/
 │   ├── ImportDiagnostics.kt 导入诊断文本（周次核对表 / 接口报告）
 │   ├── UpdateChecker.kt     检查更新（版本比较 / Release 解析 / 受限网络请求）
 │   ├── NextClass.kt         今日「下一节 / 正在上 / 已上完」判定
-│   ├── ScheduleBackup.kt    课表备份文件的编解码与大小校验
 │   ├── CourseColors.kt      课程配色
 │   ├── ClassTimes.kt        作息时间
 │   ├── ImageDecode.kt       图片降采样解码（壁纸 / 彩蛋共用）
@@ -91,7 +89,7 @@ app/src/main/java/com/jianke/schedule/
     ├── SettingsScreen.kt    设置
     ├── FloatingDock.kt      悬浮 Dock 栏
     ├── WallpaperEditor.kt   背景构图调整
-    ├── SettingsDialogs.kt   学期周次校正 / 恢复课表确认弹窗
+    ├── SettingsDialogs.kt   学期周次校正弹窗
     ├── UpdateAvailableDialog.kt 发现新版本弹窗
     ├── AboutScreen.kt       关于与鸣谢
     ├── EasterEggDialog.kt   彩蛋弹窗
@@ -104,7 +102,6 @@ app/src/main/java/com/jianke/schedule/
 - 导入时通过 WebView 登录学校系统，账号密码不经过本 App，也不做任何存储
 - 启动时（每天最多一次）会向 GitHub 查询是否有新版本：只发一个 GET 请求读版本号，
   不携带任何课表、账号或设备信息，可在设置里关闭「自动检查更新」
-- 「备份课表」只写入你自己在文件选择器里指定的位置，App 不主动读写共享目录
 
 ## 鸣谢
 

@@ -27,8 +27,6 @@ import com.jianke.schedule.data.AppRelease
 import com.jianke.schedule.data.EasterEgg
 import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.Schedule
-import com.jianke.schedule.data.ScheduleBackup
-import com.jianke.schedule.data.ScheduleStore
 import com.jianke.schedule.data.ScheduleWeek
 import com.jianke.schedule.data.UpdateChecker
 import com.jianke.schedule.data.Wallpaper
@@ -91,7 +89,6 @@ fun SettingsScreen(
     onAutoCheckUpdatesChange: (Boolean) -> Unit,
     onSemesterChange: (manualStartDate: String, manualTotalWeeks: Int) -> Unit,
     onSemesterReset: () -> Unit,
-    onScheduleRestored: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -115,9 +112,7 @@ fun SettingsScreen(
     var prevScale by remember { mutableStateOf(1f) }
     var prevFracX by remember { mutableStateOf(0f) }
     var prevFracY by remember { mutableStateOf(0f) }
-    // 数据分区（备份 / 恢复）与更新检查的状态
-    var backupHint by remember { mutableStateOf("") }
-    var pendingRestore by remember { mutableStateOf<Schedule?>(null) }
+    // 学期校正弹窗 / 更新检查的状态
     var showSemesterDialog by remember { mutableStateOf(false) }
     var checkState by remember { mutableStateOf<CheckState>(CheckState.Idle) }
 
@@ -152,60 +147,6 @@ fun SettingsScreen(
                 hint = "壁纸已应用，可以继续调整位置"
             } else {
                 hint = "这张图片读取失败，换一张试试"
-            }
-        }
-    }
-
-    // 导出备份：系统文件选择器（SAF），不需要存储权限
-    val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json"),
-    ) { uri ->
-        if (uri == null) {
-            backupHint = "已取消导出"
-            return@rememberLauncherForActivityResult
-        }
-        val current = schedule
-        if (current == null) {
-            backupHint = "还没有课表可备份"
-            return@rememberLauncherForActivityResult
-        }
-        scope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                runCatching {
-                    val text = ScheduleBackup.encode(current)
-                    context.contentResolver.openOutputStream(uri)?.use { output ->
-                        output.write(text.toByteArray(Charsets.UTF_8))
-                    } ?: error("empty stream")
-                }.isSuccess
-            }
-            backupHint = if (ok) {
-                "已导出课表备份（" + current.courses.size + " 门课）"
-            } else {
-                "导出失败，请换一个位置再试"
-            }
-        }
-    }
-
-    // 恢复备份：先解析校验，再弹二次确认（绝不直接覆盖）
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) {
-            backupHint = "已取消恢复"
-            return@rememberLauncherForActivityResult
-        }
-        scope.launch {
-            val restored = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        ScheduleBackup.readFrom(input)
-                    }
-                }.getOrNull()
-            }
-            if (restored == null) {
-                backupHint = "这不是广小课的课表备份文件"
-            } else {
-                pendingRestore = restored
             }
         }
     }
@@ -387,48 +328,8 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
         }
 
-        SectionHeader("数据")
+        SectionHeader("更新")
         SettingsCard {
-            // 按钮行贴着卡片顶边会显得很挤：上下各留一小段呼吸
-            Spacer(Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(
-                    text = "备份课表",
-                    onClick = {
-                        if (schedule == null) {
-                            backupHint = "还没有课表可备份"
-                        } else {
-                            exportLauncher.launch("广小课-课表-" + LocalDate.now() + ".json")
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(
-                    text = "恢复课表",
-                    onClick = {
-                        // 各家文件管理器报的 mime 不统一，放宽到 common 三种
-                        importLauncher.launch(
-                            arrayOf("application/json", "text/plain", "application/octet-stream"),
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            if (backupHint.isNotBlank()) {
-                Text(
-                    text = backupHint,
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(4.dp))
-            }
-            Text(
-                text = "备份文件只包含课表（不含壁纸和设置），可以拷到新手机上恢复。",
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
-            )
-            Spacer(Modifier.height(10.dp))
             SettingRow(
                 icon = MiuixIcons.Update,
                 title = "检查更新",
@@ -517,30 +418,6 @@ fun SettingsScreen(
                 val monday = LocalDate.now().with(DayOfWeek.MONDAY)
                 val start = monday.minusWeeks((week - 1).toLong()).toString()
                 onSemesterChange(start, total)
-            },
-        )
-    }
-
-    // 恢复确认：唯一会覆盖课表数据的入口
-    val restoring = pendingRestore
-    if (restoring != null) {
-        RestoreConfirmDialog(
-            courseCount = restoring.courses.size,
-            totalWeeks = restoring.semester.effectiveTotalWeeks,
-            onDismiss = { pendingRestore = null },
-            onConfirm = {
-                pendingRestore = null
-                scope.launch {
-                    val ok = withContext(Dispatchers.IO) {
-                        runCatching { ScheduleStore.save(context, restoring) }.isSuccess
-                    }
-                    if (ok) {
-                        backupHint = "已恢复课表（" + restoring.courses.size + " 门课）"
-                        onScheduleRestored()
-                    } else {
-                        backupHint = "恢复失败：无法写入本地存储"
-                    }
-                }
             },
         )
     }
