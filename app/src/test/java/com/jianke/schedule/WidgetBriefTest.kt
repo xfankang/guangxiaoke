@@ -43,7 +43,7 @@ class WidgetBriefTest {
 
     @Test
     fun upcomingShowsNextCourse() {
-        // 周六 09:00：只有 3-4 节（10:20-11:05）还没上 → 下一节
+        // 周六 09:00：只有 3-4 节（10:20-12:00）还没上 → 下一节
         val schedule = scheduleOf(course("高等数学", 6, 3, 4))
         val brief = widgetBrief(schedule, saturday, LocalTime.of(9, 0))
         assertTrue(brief.hasSchedule)

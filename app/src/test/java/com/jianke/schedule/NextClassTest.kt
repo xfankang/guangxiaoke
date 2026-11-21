@@ -22,27 +22,27 @@ class NextClassTest {
         weeksText = "",
     )
 
-    /** 08:20-09:55 的课，09:20 时正在进行，还剩 35 分钟。 */
+    /** 08:20-10:00 的课，09:20 时正在进行，还剩 40 分钟。 */
     @Test
     fun ongoingClassCountsRemainingMinutes() {
         val state = currentClassState(listOf(course(1, 2)), LocalTime.of(9, 20))
         assertTrue(state is ClassNow.Ongoing)
         val ongoing = state as ClassNow.Ongoing
-        assertEquals(LocalTime.of(9, 55), ongoing.end)
-        assertEquals(35L, ongoing.minutesLeft)
+        assertEquals(LocalTime.of(10, 0), ongoing.end)
+        assertEquals(40L, ongoing.minutesLeft)
     }
 
-    /** 09:55 正好下课：不再算进行中，指向 10:20 的下一节。 */
+    /** 10:00 正好下课：不再算进行中，指向 10:20 的下一节。 */
     @Test
     fun exactEndTimeIsNotOngoing() {
         val state = currentClassState(
             listOf(course(1, 2), course(3, 4)),
-            LocalTime.of(9, 55),
+            LocalTime.of(10, 0),
         )
         assertTrue(state is ClassNow.Upcoming)
         val upcoming = state as ClassNow.Upcoming
         assertEquals(LocalTime.of(10, 20), upcoming.start)
-        assertEquals(25L, upcoming.minutesLeft)
+        assertEquals(20L, upcoming.minutesLeft)
     }
 
     /** 正好在开始时间：算进行中（不能让用户看到「还有 0 分钟」）。 */
