@@ -3,9 +3,12 @@ package com.jianke.schedule
 import com.jianke.schedule.data.ClassNow
 import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.currentClassState
+import com.jianke.schedule.data.ongoingCourseOf
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 import java.time.LocalTime
 
 /** 今日课程页的「下一节 / 正在上 / 已上完」判定，纯函数回归。 */
@@ -93,5 +96,41 @@ class NextClassTest {
             lessonTimes = emptyMap(),
         )
         assertTrue(state is ClassNow.Finished)
+    }
+
+    /** 周网格高亮：本周此刻正在上的那节课（2026-11-18 是周三，09:20 在 1-2 节内）。 */
+    @Test
+    fun ongoingCourseOnlyInCurrentWeek() {
+        val c = course(1, 2) // 周三 1-2 节
+        assertEquals(
+            c,
+            ongoingCourseOf(
+                weekCourses = listOf(c), week = 3, currentWeek = 3,
+                today = LocalDate.of(2026, 11, 18), now = LocalTime.of(9, 20),
+            ),
+        )
+    }
+
+    /** 翻到别的周：没有「现在」，不高亮。 */
+    @Test
+    fun noOngoingInOtherWeek() {
+        assertNull(
+            ongoingCourseOf(
+                weekCourses = listOf(course(1, 2)), week = 4, currentWeek = 3,
+                today = LocalDate.of(2026, 11, 18), now = LocalTime.of(9, 20),
+            ),
+        )
+    }
+
+    /** 同一周但不是今天：不高亮。 */
+    @Test
+    fun noOngoingOnOtherDay() {
+        // 2026-11-19 是周四，课在周三
+        assertNull(
+            ongoingCourseOf(
+                weekCourses = listOf(course(1, 2)), week = 3, currentWeek = 3,
+                today = LocalDate.of(2026, 11, 19), now = LocalTime.of(9, 20),
+            ),
+        )
     }
 }

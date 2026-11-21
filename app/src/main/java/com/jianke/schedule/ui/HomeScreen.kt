@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +68,7 @@ import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.Schedule
 import com.jianke.schedule.data.currentClassState
 import com.jianke.schedule.data.layoutDay
+import com.jianke.schedule.data.ongoingCourseOf
 import com.jianke.schedule.data.schoolBigPeriods
 import com.jianke.schedule.data.ScheduleWeek
 import com.jianke.schedule.data.schoolLessonTimes
@@ -138,6 +140,15 @@ fun HomeScreen(
     // 浮窗出入动画的开关：与 selectedCourse 分开管理，关闭时先播退出动画再移除浮层
     var detailVisible by remember { mutableStateOf(false) }
 
+    // 「正在进行」高亮用的当前时刻：30 秒一跳，与「今日课程」的倒计时口径一致
+    var clockNow by remember { mutableStateOf(LocalTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            clockNow = LocalTime.now()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -200,11 +211,20 @@ fun HomeScreen(
                                 // 周视图格子不让它钻进 Dock 底下（课不被玻璃压住）
                                 .padding(bottom = contentPadding.calculateBottomPadding()),
                         ) { page ->
+                            val pageCourses = schedule.coursesOfWeek(page + 1)
+                                .filter { it.dayOfWeek <= dayCount }
                             WeekGrid(
-                                courses = schedule.coursesOfWeek(page + 1)
-                                    .filter { it.dayOfWeek <= dayCount },
+                                courses = pageCourses,
                                 dayCount = dayCount,
                                 highlight = if (detailVisible) selectedCourse else null,
+                                // 「正在进行」那节课：只在当前周的页面上高亮，翻到别周没有「现在」
+                                ongoing = ongoingCourseOf(
+                                    weekCourses = pageCourses,
+                                    week = page + 1,
+                                    currentWeek = currentWeek,
+                                    today = LocalDate.now(),
+                                    now = clockNow,
+                                ),
                                 onCourseClick = { course, rect ->
                                     val now = System.currentTimeMillis()
                                     // 浮层是独立窗口：点外面时它会先被关掉，这一次触摸就不能再当成
@@ -586,6 +606,7 @@ private fun WeekGrid(
     courses: List<Course>,
     dayCount: Int,
     highlight: Course?,
+    ongoing: Course?,
     onCourseClick: (Course, Rect) -> Unit,
 ) {
     val wallpaper = LocalWallpaperActive.current
@@ -689,7 +710,7 @@ private fun WeekGrid(
                                 }
                             },
                     ) {
-                        CourseCell(course)
+                        CourseCell(course, isOngoing = course === ongoing)
                     }
                 }
             }
@@ -705,7 +726,7 @@ private fun WeekGrid(
  * 左侧那条 3dp 色条已经去掉：颜色直接铺满整格，识别一样在，格子边缘也干净。
  */
 @Composable
-private fun CourseCell(course: Course) {
+private fun CourseCell(course: Course, isOngoing: Boolean = false) {
     val onWallpaper = LocalWallpaperActive.current
     val shape = RoundedCornerShape(Ui.CellCorner)
     val fill = courseTint(course.color).let {
@@ -717,7 +738,15 @@ private fun CourseCell(course: Course) {
             .fillMaxSize()
             .padding(Ui.CellGap / 2)
             .clip(shape)
-            .background(fill),
+            .background(fill)
+            // 此刻正在上的课：主色描边一圈（画在课程色之上、文字之下，不影响内容）
+            .then(
+                if (isOngoing) {
+                    Modifier.border(2.dp, MiuixTheme.colorScheme.primary, shape)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         // 一格放得下多少字，按它自己的高度算。
         // 屏幕上只有 5 行大节，矮屏一格可能只有 70dp 出头，写死行数会把地点挤到卡片外面被裁掉。

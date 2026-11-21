@@ -55,6 +55,26 @@ fun currentClassState(
 
 private fun String.toTimeOrNull(): LocalTime? = runCatching { LocalTime.parse(this) }.getOrNull()
 
+/**
+ * 周网格的「正在上课」高亮：当前周此刻正在上的那节课。
+ * 翻到别的周没有「现在」，直接返回 null；本周的课交给 [currentClassState] 判定。
+ */
+fun ongoingCourseOf(
+    weekCourses: List<Course>,
+    week: Int,
+    currentWeek: Int,
+    today: LocalDate,
+    now: LocalTime,
+    lessonTimes: Map<Int, Pair<String, String>> = schoolLessonTimes,
+): Course? {
+    if (week != currentWeek) return null
+    val todayCourses = weekCourses.filter { it.dayOfWeek == today.dayOfWeek.value }
+    return when (val state = currentClassState(todayCourses, now, lessonTimes)) {
+        is ClassNow.Ongoing -> state.course
+        else -> null
+    }
+}
+
 /** 分钟数向上取整：还剩 30 秒也算 1 分钟；已过则返回 0。 */
 private fun minutesBetween(from: LocalTime, to: LocalTime): Long {
     val seconds = Duration.between(from, to).seconds
