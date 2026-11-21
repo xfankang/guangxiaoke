@@ -1,5 +1,6 @@
 package com.jianke.schedule.ui
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -9,6 +10,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
+import androidx.core.content.FileProvider
 import com.jianke.schedule.data.Course
 import com.jianke.schedule.data.CourseColors
 import com.jianke.schedule.data.Schedule
@@ -16,7 +18,12 @@ import com.jianke.schedule.data.ScheduleWeek
 import com.jianke.schedule.data.layoutDay
 import com.jianke.schedule.data.rowIndexOf
 import com.jianke.schedule.data.schoolBigPeriods
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.format.DateTimeFormatter
+import java.io.File
 import kotlin.math.roundToInt
 
 /**
@@ -153,6 +160,41 @@ object ShareCard {
         val footer = "广小课 · 数据全本地"
         canvas.drawText(footer, (W - footerPaint.measureText(footer)) / 2f, height - M - 6f, footerPaint)
         return bitmap
+    }
+
+    /**
+     * 生成当前周的分享长图并发起系统分享。
+     *
+     * 图片写在 cacheDir（经 FileProvider 供分享面板读取）；PNG 编码放 IO 线程，
+     * 主线程只弹分享面板。失败静默：分享是锦上添花的功能，不值得打扰用户。
+     */
+    fun shareWeek(
+        context: Context,
+        scope: CoroutineScope,
+        schedule: Schedule,
+        week: Int,
+        showWeekend: Boolean,
+    ) {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val bitmap = build(schedule, week, showWeekend)
+                val file = File(context.cacheDir, "share").resolve("课表_第${week}周.png")
+                file.parentFile?.mkdirs()
+                file.outputStream().use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                val uri = FileProvider.getUriForFile(
+                    context, context.packageName + ".fileprovider", file,
+                )
+                withContext(Dispatchers.Main) {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                        .setType("image/png")
+                        .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    context.startActivity(android.content.Intent.createChooser(send, "分享课表"))
+                }
+            }.onFailure { android.util.Log.e("GxkShare", "分享失败", it) }
+        }
     }
 
     private fun step(dayW: Float) = dayW + GAP

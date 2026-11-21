@@ -319,6 +319,18 @@ fun SettingsScreen(
                 summary = "关闭后周课表只显示周一至周五；今日课程不受影响",
                 trailing = { Switch(checked = showWeekend, onCheckedChange = onShowWeekendChange) },
             )
+            SettingRow(
+                icon = ShareIcon,
+                title = "分享课表为图片",
+                summary = "生成本周课表长图，分享给同学",
+                onClick = {
+                    schedule?.let { s ->
+                        val week = ScheduleWeek.currentWeekOf(s)
+                        ShareCard.shareWeek(context, scope, s, week, showWeekend)
+                    }
+                },
+                showChevron = false,
+            )
             Text(
                 text = "周次按开学日期推算；发现不对时点「学期周次」校正，校正不会改动课表内容。",
                 style = MiuixTheme.textStyles.footnote2,

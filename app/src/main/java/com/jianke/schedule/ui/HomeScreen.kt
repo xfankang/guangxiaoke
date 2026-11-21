@@ -1,8 +1,5 @@
 package com.jianke.schedule.ui
 
-import android.content.Context
-import android.content.Intent
-import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -35,9 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,11 +70,8 @@ import com.jianke.schedule.data.layoutDay
 import com.jianke.schedule.data.schoolBigPeriods
 import com.jianke.schedule.data.ScheduleWeek
 import com.jianke.schedule.data.schoolLessonTimes
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -91,7 +83,6 @@ import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Weeks
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -123,7 +114,6 @@ fun HomeScreen(
     showWeekend: Boolean,
     onImport: () -> Unit,
 ) {
-    val context = LocalContext.current
     var tab by remember { mutableIntStateOf(MODE_WEEK) }
     val totalWeeks = (schedule?.semester?.effectiveTotalWeeks ?: 1).coerceAtLeast(1)
     // 当前周每天重算一次：进程跨周日午夜存活时（schedule 对象没变）也要翻到新的一周，
@@ -200,7 +190,6 @@ fun HomeScreen(
                                     pagerState.animateScrollToPage((currentWeek - 1).coerceIn(0, totalWeeks - 1))
                                 }
                             },
-                            onShare = { shareWeek(context, scope, schedule, shownWeek, showWeekend) },
                         )
                         DayHeader(dates = dates, isCurrentWeek = shownWeek == currentWeek)
                         HorizontalPager(
@@ -383,47 +372,6 @@ private fun ModeTabs(tab: Int, onTabChange: (Int) -> Unit) {
     )
 }
 
-/**
- * 生成当前周的分享长图并发起系统分享。
- *
- * 图片写在 cacheDir（经 FileProvider 供分享面板读取）；PNG 编码放 IO 线程，
- * 主线程只弹分享面板。失败静默：分享是锦上添花的功能，不值得打扰用户。
- */
-private fun shareWeek(
-    context: Context,
-    scope: CoroutineScope,
-    schedule: Schedule,
-    week: Int,
-    showWeekend: Boolean,
-) {
-    scope.launch(Dispatchers.IO) {
-        runCatching {
-            val bitmap = ShareCard.build(schedule, week, showWeekend)
-            val file = File(context.cacheDir, "share").resolve("课表_第${week}周.png")
-            file.parentFile?.mkdirs()
-            file.outputStream().use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-            val uri = FileProvider.getUriForFile(
-                context, context.packageName + ".fileprovider", file,
-            )
-            withContext(Dispatchers.Main) {
-                val send = Intent(Intent.ACTION_SEND)
-                    .setType("image/png")
-                    .putExtra(Intent.EXTRA_STREAM, uri)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                context.startActivity(Intent.createChooser(send, "分享课表"))
-            }
-        }.onFailure { android.util.Log.e("GxkShare", "分享失败", it) }
-    }
-}
-
-/**
- * 周导航：两头是图标按钮，中间才是「第几周 + 日期范围 + 几门课」。
- *
- * 之前是「上一周 / 第N周 / 回本周 / 下一周」四个文字按钮挤在一张卡片里，
- * 中间那点位置既放不下周次也放不下日期。
- */
 @Composable
 private fun WeekNavBar(
     week: Int,
@@ -434,7 +382,6 @@ private fun WeekNavBar(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onToday: () -> Unit,
-    onShare: () -> Unit,
 ) {
     val subtitle = listOfNotNull(dateRange, courseCount.toString() + " 门课").joinToString(" · ")
     Row(
@@ -488,12 +435,6 @@ private fun WeekNavBar(
             contentDescription = "下一周",
             onClick = onNext,
             enabled = week < totalWeeks,
-        )
-        Spacer(Modifier.width(10.dp))
-        CircleIconButton(
-            icon = ShareIcon,
-            contentDescription = "分享本周课表",
-            onClick = onShare,
         )
     }
 }

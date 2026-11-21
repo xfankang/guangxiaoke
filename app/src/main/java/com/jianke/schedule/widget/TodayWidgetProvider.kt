@@ -77,7 +77,9 @@ class TodayWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         views.setOnClickPendingIntent(R.id.widget_root, open)
-        appWidgetIds.forEach { manager.updateAppWidget(it, views) }
+        // ComponentName 全量更新：比逐 id 更新对 OEM 启动器（HyperOS 等）兼容性更好，
+        // 不会因为个别 id 的应用失败导致其余实例停留在旧内容
+        manager.updateAppWidget(ComponentName(context, TodayWidgetProvider::class.java), views)
     }
 
     companion object {
