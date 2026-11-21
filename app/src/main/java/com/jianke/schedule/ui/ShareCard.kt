@@ -34,14 +34,14 @@ object ShareCard {
     private const val INK_SUB = 0xFF8E8E95.toInt()
     private const val INK_DARK = 0xFF151519.toInt()
 
-    private const val W = 1080
-    private const val M = 48f
-    private const val GUTTER = 150f
-    private const val GAP = 14f
-    private const val ROW_H = 185f
-    private const val TITLE_H = 130f
-    private const val HEAD_H = 96f
-    private const val FOOTER_H = 96f
+    private const val W = 1440
+    private const val M = 64f
+    private const val GUTTER = 200f
+    private const val GAP = 18f
+    private const val ROW_H = 246f
+    private const val TITLE_H = 173f
+    private const val HEAD_H = 128f
+    private const val FOOTER_H = 128f
 
     private val DATE_FMT = DateTimeFormatter.ofPattern("M/d")
 
@@ -61,32 +61,32 @@ object ShareCard {
         val canvas = Canvas(bitmap)
         canvas.drawColor(BG)
 
-        val inkMain = fillPaint(INK_MAIN, 38f)
-        val inkSub = fillPaint(INK_SUB, 26f)
-        val titlePaint = fillPaint(INK_MAIN, 58f, bold = true)
-        val brandPaint = fillPaint(INK_SUB, 34f)
+        val inkMain = fillPaint(INK_MAIN, 50f)
+        val inkSub = fillPaint(INK_SUB, 34f)
+        val titlePaint = fillPaint(INK_MAIN, 76f, bold = true)
+        val brandPaint = fillPaint(INK_SUB, 44f)
         val slotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = SLOT }
-        val footerPaint = fillPaint(INK_SUB, 28f)
+        val footerPaint = fillPaint(INK_SUB, 36f)
 
         // 标题行：周次 + 日期范围（首尾）；右上角品牌
         val range = dates.filterNotNull().takeIf { it.size >= 2 }
             ?.let { "${it.first().format(DATE_FMT)} – ${it.last().format(DATE_FMT)}" } ?: ""
         val title = if (range.isEmpty()) "第 $week 周" else "第 $week 周 · $range"
-        canvas.drawText(title, M, M + 56f, titlePaint)
-        canvas.drawText("广小课", W - M - brandPaint.measureText("广小课"), M + 50f, brandPaint)
+        canvas.drawText(title, M, M + 72f, titlePaint)
+        canvas.drawText("广小课", W - M - brandPaint.measureText("广小课"), M + 66f, brandPaint)
 
         // 日期表头：每列两行（周几 + 日号），居中
-        val headInk = fillPaint(INK_MAIN, 30f, bold = true)
-        val headSub = fillPaint(INK_SUB, 26f)
+        val headInk = fillPaint(INK_MAIN, 40f, bold = true)
+        val headSub = fillPaint(INK_SUB, 34f)
         val dayLabels = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
         for (d in 0 until dayCount) {
             val cx = M + GUTTER + step(dayW) * d + dayW / 2f
             val label = dayLabels[d]
-            canvas.drawText(label, cx - headInk.measureText(label) / 2f, M + TITLE_H + 40f, headInk)
+            canvas.drawText(label, cx - headInk.measureText(label) / 2f, M + TITLE_H + 52f, headInk)
             val date = dates.getOrNull(d)
             if (date != null) {
                 val t = date.format(DATE_FMT)
-                canvas.drawText(t, cx - headSub.measureText(t) / 2f, M + TITLE_H + 76f, headSub)
+                canvas.drawText(t, cx - headSub.measureText(t) / 2f, M + TITLE_H + 100f, headSub)
             }
         }
 
@@ -102,9 +102,9 @@ object ShareCard {
             }
             // 节次栏：第几节 + 起止时间
             val bp = schoolBigPeriods[r]
-            canvas.drawText(bp.periods, M, rowTop + 44f, inkMain)
-            canvas.drawText(bp.startTime, M, rowTop + 84f, inkSub)
-            canvas.drawText(bp.endTime, M, rowTop + 118f, inkSub)
+            canvas.drawText(bp.periods, M, rowTop + 56f, inkMain)
+            canvas.drawText(bp.startTime, M, rowTop + 108f, inkSub)
+            canvas.drawText(bp.endTime, M, rowTop + 152f, inkSub)
         }
         for (day in 1..dayCount) {
             val placed = layoutDay(courses.filter { it.dayOfWeek == day })
@@ -123,15 +123,15 @@ object ShareCard {
                 val pad = 16f
                 val textW = w - pad * 2
 
-                // 课名：StaticLayout 自动换行（窄列也能放下完整课名），最多 3 行
+                // 课名：StaticLayout 自动换行（窄列也能放下完整课名），最多 4 行
                 val namePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = ink
-                    textSize = 28f
+                    textSize = 30f
                     typeface = Typeface.DEFAULT_BOLD
                 }
                 val nameLayout = StaticLayout.Builder
                     .obtain(course.name, 0, course.name.length, namePaint, textW.toInt().coerceAtLeast(1))
-                    .setMaxLines(3)
+                    .setMaxLines(4)
                     .setEllipsize(TextUtils.TruncateAt.END)
                     .setAlignment(Layout.Alignment.ALIGN_CENTER)
                     .build()
@@ -142,7 +142,7 @@ object ShareCard {
 
                 // 教室：一行，贴格子底部
                 if (course.room.isNotBlank()) {
-                    val roomPaint = fillPaint(ink, 24f)
+                    val roomPaint = fillPaint(ink, 26f)
                     val room = ellipsize(roomPaint, course.room, textW)
                     canvas.drawText(room, x + pad, y + h - 14f, roomPaint)
                 }
