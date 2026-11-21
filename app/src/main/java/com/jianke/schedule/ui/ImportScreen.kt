@@ -53,6 +53,7 @@ import com.jianke.schedule.data.WeekParser
 import com.jianke.schedule.web.ApiProbeJs
 import com.jianke.schedule.web.ScheduleJs
 import com.jianke.schedule.web.SchoolEndpoints
+import com.jianke.schedule.widget.TodayWidgetProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -218,6 +219,8 @@ fun ImportScreen(
                 scan.log("课表保存完成（" + courses.size + " 门）")
                 // 只有保存成功后才同步会话，失败时保留旧课表并给出可见错误。
                 runCatching { android.webkit.CookieManager.getInstance().flush() }
+                // 数据刚变了：立刻刷一遍所有小组件，不等系统的定时广播
+                runCatching { TodayWidgetProvider.refreshAll(context) }
             }
         }
     }
