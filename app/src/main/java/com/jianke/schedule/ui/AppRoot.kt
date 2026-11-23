@@ -142,6 +142,8 @@ fun AppRoot() {
     var showWeekend by remember { mutableStateOf(Prefs.showWeekend(context)) }
     // 启动时是否自动检查更新
     var autoCheckUpdates by remember { mutableStateOf(Prefs.autoCheckUpdates(context)) }
+    // 开发者模式（默认关）：关掉时隐藏所有排查入口，界面只留普通用户需要的
+    var developerMode by remember { mutableStateOf(Prefs.developerMode(context)) }
     // 检查到的可用新版本；非空时弹一次窗
     var pendingUpdate by remember { mutableStateOf<AppRelease?>(null) }
     val scope = rememberCoroutineScope()
@@ -161,6 +163,7 @@ fun AppRoot() {
     if (importing) {
         AppTheme(darkOverride = darkOverride) {
             ImportScreen(
+                developerMode = developerMode,
                 onCancel = { importing = false },
                 onImported = {
                     schedule = runCatching { ScheduleStore.load(context) }.getOrNull()
@@ -318,6 +321,7 @@ fun AppRoot() {
                                             schedule = schedule,
                                             contentPadding = contentPadding,
                                             showWeekend = showWeekend,
+                                            developerMode = developerMode,
                                             onImport = { importing = true },
                                         )
 
@@ -356,6 +360,11 @@ fun AppRoot() {
                                             onAutoCheckUpdatesChange = { value ->
                                                 autoCheckUpdates = value
                                                 Prefs.setAutoCheckUpdates(context, value)
+                                            },
+                                            developerMode = developerMode,
+                                            onDeveloperModeChange = { value ->
+                                                developerMode = value
+                                                Prefs.setDeveloperMode(context, value)
                                             },
                                             onSemesterChange = { manualStart, manualTotal ->
                                                 updateSemester { semester ->

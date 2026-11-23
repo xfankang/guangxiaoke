@@ -15,6 +15,7 @@ object Prefs {
     private const val KEY_WP_Y = "wallpaper_offset_y"
     private const val KEY_WEEKEND = "show_weekend"
     private const val KEY_AUTO_UPDATE = "auto_update_check"
+    private const val KEY_DEVELOPER = "developer_mode"
     private const val KEY_LAST_UPDATE = "last_update_check_at"
     private const val KEY_PROMPTED_VERSION = "last_prompted_version"
 
@@ -92,6 +93,19 @@ object Prefs {
 
     fun setAutoCheckUpdates(context: Context, value: Boolean) {
         sp(context).edit().putBoolean(KEY_AUTO_UPDATE, value).apply()
+    }
+
+    /**
+     * 开发者模式（默认关）。
+     *
+     * 关：导入诊断按钮、同课多时段、课表自检等排查入口全部隐藏，界面只留普通用户需要的；
+     * 开：这些入口重新出现，方便开发者/反馈问题时取日志。普通用户不受影响。
+     */
+    fun developerMode(context: Context): Boolean =
+        sp(context).getBoolean(KEY_DEVELOPER, false)
+
+    fun setDeveloperMode(context: Context, value: Boolean) {
+        sp(context).edit().putBoolean(KEY_DEVELOPER, value).apply()
     }
 
     /** 上次检查更新的时间（毫秒），用于「每天最多一次」节流。 */

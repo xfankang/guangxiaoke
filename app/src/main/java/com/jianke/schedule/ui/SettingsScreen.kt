@@ -47,6 +47,7 @@ import top.yukonga.miuix.kmp.icon.extended.Background
 import top.yukonga.miuix.kmp.icon.extended.Image
 import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Update
 import top.yukonga.miuix.kmp.icon.extended.Weeks
 import top.yukonga.miuix.kmp.icon.extended.WorldClock
@@ -91,6 +92,8 @@ fun SettingsScreen(
     onShowWeekendChange: (Boolean) -> Unit,
     autoCheckUpdates: Boolean,
     onAutoCheckUpdatesChange: (Boolean) -> Unit,
+    developerMode: Boolean,
+    onDeveloperModeChange: (Boolean) -> Unit,
     onSemesterChange: (manualStartDate: String, manualTotalWeeks: Int) -> Unit,
     onSemesterReset: () -> Unit,
 ) {
@@ -336,33 +339,6 @@ fun SettingsScreen(
                 },
                 showChevron = false,
             )
-            SettingRow(
-                icon = MiuixIcons.Update,
-                title = "课表数据自检",
-                summary = "复制记录明细（周次原文 → 解析结果 / 今日课程），便于排查",
-                onClick = {
-                    val s = schedule
-                    if (s == null) {
-                        selfCheckHint = "还没有课表"
-                    } else {
-                        val text = runCatching { ScheduleSelfCheck.report(s) }
-                            .getOrElse { "自检生成失败：" + it.javaClass.simpleName }
-                        val clipboard =
-                            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("广小课课表自检", text))
-                        selfCheckHint = "已复制，可发给开发者排查"
-                    }
-                },
-                showChevron = false,
-            )
-            if (selfCheckHint.isNotBlank()) {
-                Text(
-                    text = selfCheckHint,
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 62.dp, bottom = 4.dp),
-                )
-            }
             Text(
                 text = "周次按开学日期推算；发现不对时点「学期周次」校正，校正不会改动课表内容。",
                 style = MiuixTheme.textStyles.footnote2,
@@ -415,6 +391,55 @@ fun SettingsScreen(
                 highlightOnPress = false,
             )
         }
+        // 开发者模式：默认关，普通用户看不到任何排查入口；开启后集中显示在这里
+        SectionHeader("开发者选项")
+        SettingsCard {
+            SettingRow(
+                icon = MiuixIcons.Settings,
+                title = "开发者模式",
+                summary = "开启后显示导入诊断、同课多时段、课表自检等排查工具",
+                trailing = {
+                    Switch(checked = developerMode, onCheckedChange = onDeveloperModeChange)
+                },
+            )
+            if (developerMode) {
+                SettingRow(
+                    icon = MiuixIcons.Update,
+                    title = "课表数据自检",
+                    summary = "复制记录明细（周次原文 → 解析结果 / 今日课程），便于排查",
+                    onClick = {
+                        val s = schedule
+                        if (s == null) {
+                            selfCheckHint = "还没有课表"
+                        } else {
+                            val text = runCatching { ScheduleSelfCheck.report(s) }
+                                .getOrElse { "自检生成失败：" + it.javaClass.simpleName }
+                            val clipboard =
+                                context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("广小课课表自检", text))
+                            selfCheckHint = "已复制，可发给开发者排查"
+                        }
+                    },
+                    showChevron = false,
+                )
+                if (selfCheckHint.isNotBlank()) {
+                    Text(
+                        text = selfCheckHint,
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 62.dp, bottom = 4.dp),
+                    )
+                }
+                Text(
+                    text = "仅供排查问题使用；关闭开发者模式后这些入口会隐藏，不影响课表与小组件。",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
+                    modifier = Modifier.padding(start = 62.dp, end = 16.dp, bottom = 10.dp),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
         // 尾部留出玻璃底栏的高度：卡片滚动时从玻璃下面穿过
         Spacer(Modifier.height(contentPadding.calculateBottomPadding() + 28.dp))
     }

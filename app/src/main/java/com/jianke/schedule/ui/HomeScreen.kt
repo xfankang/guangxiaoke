@@ -117,6 +117,8 @@ fun HomeScreen(
     contentPadding: PaddingValues,
     /** 周课表是否显示周末两列；今日课程不受影响（永远显示真实的今天）。 */
     showWeekend: Boolean,
+    /** 开发者模式：开启后浮窗才显示「同一门课的其他时段」等排查信息。 */
+    developerMode: Boolean,
     onImport: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(MODE_WEEK) }
@@ -254,9 +256,15 @@ fun HomeScreen(
                                         detailVisible = false
                                     } else {
                                         selectedCourse = course
-                                        selectedOtherSessions = CourseSessions
-                                            .sessionsOf(schedule, course)
-                                            .filter { it != course }
+                                        // 「其他时段」属于排查信息，只有开发者模式才显示；
+                                        // 普通用户只看当前这一条排课记录，界面更清爽
+                                        selectedOtherSessions = if (developerMode) {
+                                            CourseSessions
+                                                .sessionsOf(schedule, course)
+                                                .filter { it != course }
+                                        } else {
+                                            emptyList()
+                                        }
                                         anchorRect = rect
                                         detailVisible = true
                                     }

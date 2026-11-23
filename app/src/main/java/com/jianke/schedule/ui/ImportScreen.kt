@@ -132,6 +132,8 @@ private const val PHASE_SLOW = 2
  * 却要用户每次先等一遍。更新入口只保留「更新课表」模块和超期提醒。
  */
 fun ImportScreen(
+    /** 开发者模式：关闭时不显示导入诊断按钮/诊断原文，普通用户只看「完成」。 */
+    developerMode: Boolean,
     onCancel: () -> Unit,
     onImported: (Int) -> Unit,
 ) {
@@ -215,7 +217,12 @@ fun ImportScreen(
                 }
                 importedCourses = courses
                 importedCount = courses.size
-                status = "已导入 " + courses.size + " 门课（" + via + "）"
+                // 「扫描 N 周 / 直连接口」是实现细节，普通用户不需要
+                status = if (developerMode) {
+                    "已导入 " + courses.size + " 门课（" + via + "）"
+                } else {
+                    "已导入 " + courses.size + " 门课"
+                }
                 scan.log("课表保存完成（" + courses.size + " 门）")
                 // 只有保存成功后才同步会话，失败时保留旧课表并给出可见错误。
                 runCatching { android.webkit.CookieManager.getInstance().flush() }
@@ -569,7 +576,8 @@ fun ImportScreen(
                     ) {
                         Text("完成", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                     }
-                    Spacer(Modifier.height(6.dp))
+                    if (developerMode) {
+                        Spacer(Modifier.height(6.dp))
                     // 排查用的复制按钮竖着排：横着并排三四个 TextButton 在窄屏上会互相挤
                     Column {
                         TextButton(
@@ -605,10 +613,12 @@ fun ImportScreen(
                             )
                         }
                     }
+                    } // developerMode：排查按钮只有开发者模式显示
                 }
             }
             val apiNote = apiReport
-            if (apiNote != null) {
+            // 接口诊断属于排查信息，普通用户不需要看到
+            if (developerMode && apiNote != null) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -645,22 +655,33 @@ fun ImportScreen(
                     cornerRadius = Ui.CardCorner,
                     insideMargin = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
                 ) {
-                    Text(text = "没有解析出课程。把下面的内容复制发给开发者即可定位问题：")
-                    TextButton(
-                        text = "复制诊断信息",
-                        onClick = {
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("gxk", failed))
-                            status = "已复制"
-                        },
-                    )
-                    Text(
-                        text = failed.take(3000),
-                        style = MiuixTheme.textStyles.footnote2,
-                        modifier = Modifier
-                            .heightIn(max = 420.dp)
-                            .verticalScroll(rememberScrollState()),
-                    )
+                    if (developerMode) {
+                        Text(text = "没有解析出课程。把下面的内容复制发给开发者即可定位问题：")
+                        TextButton(
+                            text = "复制诊断信息",
+                            onClick = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("gxk", failed))
+                                status = "已复制"
+                            },
+                        )
+                        Text(
+                            text = failed.take(3000),
+                            style = MiuixTheme.textStyles.footnote2,
+                            modifier = Modifier
+                                .heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState()),
+                        )
+                    } else {
+                        Text(text = "导入没有完成")
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "可能是学校页面改版或网络不稳定，请返回后重试一次；" +
+                                "如果一直失败，可在 设置 → 开发者选项 里开启开发者模式，复制诊断信息反馈。",
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onBackgroundVariant,
+                        )
+                    }
                 }
             }
             Box(modifier = Modifier.fillMaxSize()) {
@@ -890,13 +911,15 @@ fun ImportScreen(
                             color = MiuixTheme.colorScheme.onBackgroundVariant,
                             textAlign = TextAlign.Center,
                         )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = err,
-                            style = MiuixTheme.textStyles.footnote2,
-                            color = MiuixTheme.colorScheme.onBackgroundVariant,
-                            modifier = Modifier.heightIn(max = 64.dp),
-                        )
+                        if (developerMode) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = err,
+                                style = MiuixTheme.textStyles.footnote2,
+                                color = MiuixTheme.colorScheme.onBackgroundVariant,
+                                modifier = Modifier.heightIn(max = 64.dp),
+                            )
+                        }
                         Spacer(Modifier.height(16.dp))
                         Button(
                             onClick = {
