@@ -74,32 +74,34 @@ object ShareCard {
         val range = dates.filterNotNull().takeIf { it.size >= 2 }
             ?.let { "${it.first().format(DATE_FMT)} – ${it.last().format(DATE_FMT)}" } ?: ""
         val title = if (range.isEmpty()) "第 $week 周" else "第 $week 周 · $range"
-        canvas.drawText(title, M, M + 64f, TITLE_PAINT)
-        canvas.drawText("广小课", W - M - BRAND_PAINT.measureText("广小课"), M + 58f, BRAND_PAINT)
+        val brandWidth = BRAND_PAINT.measureText("广小课")
+        canvas.drawText("广小课", W - M - brandWidth, M + 58f, BRAND_PAINT)
+        // 标题给右上角品牌让位；超长时省略，不会压到品牌上
+        drawEllipsized(canvas, title, M, M + 64f, W - M - brandWidth - 40f, TITLE_PAINT)
 
         var cursor = contentTop
-        val dayPaint = textPaint(INK_MAIN, 44f, bold = true)
-        val dayDatePaint = textPaint(INK_SUB, 30f)
-        val emptyPaint = textPaint(INK_SUB, 30f)
         dayCourses.forEachIndexed { i, courses ->
             val label = DAY_LABELS[i]
             val date = dates.getOrNull(i)?.format(DATE_FMT) ?: ""
-            // 日头：第几周色条换成当天第一节课的识别色，周几 + 日期
-            canvas.drawText(label, M, cursor + 44f, dayPaint)
+            // 日头：周几 + 日期（色点放在每门课前面，表示该课的识别色）
+            canvas.drawText(label, M, cursor + 44f, DAY_PAINT)
             if (date.isNotEmpty()) {
-                canvas.drawText(date, M + DAY_PAINT.measureText(label) + 20f, cursor + 44f, dayDatePaint)
+                canvas.drawText(date, M + DAY_PAINT.measureText(label) + 20f, cursor + 44f, DAY_DATE_PAINT)
             }
             cursor += DAY_HEADER_H
             if (courses.isEmpty()) {
-                canvas.drawText("无课", M + 16f, cursor + 40f, emptyPaint)
+                canvas.drawText("无课", M + 16f, cursor + 40f, EMPTY_PAINT)
                 cursor += EMPTY_H
             } else {
+                val textX = M + 56f + DOT_R * 2
+                val maxTextWidth = W - M - textX
                 courses.forEach { course ->
                     val accent = if (course.color != 0) course.color else CourseColors.of(course.name)
                     val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent }
                     canvas.drawCircle(M + 24f + DOT_R, cursor + 34f, DOT_R, dot)
-                    canvas.drawText(course.name, M + 56f + DOT_R * 2, cursor + 44f, ROW_NAME_PAINT)
-                    canvas.drawText(courseSub(course), M + 56f + DOT_R * 2, cursor + 88f, ROW_SUB_PAINT)
+                    // 超长课名/教室一律省略，绝不画到画布外被静默裁掉
+                    drawEllipsized(canvas, course.name, textX, cursor + 44f, maxTextWidth, ROW_NAME_PAINT)
+                    drawEllipsized(canvas, courseSub(course), textX, cursor + 88f, maxTextWidth, ROW_SUB_PAINT)
                     cursor += ROW_H
                 }
                 cursor += DAY_GAP
@@ -127,6 +129,28 @@ object ShareCard {
             start != null -> start
             else -> "时间待定"
         }
+    }
+
+    /** 单行绘制：超出 maxWidth 就截断并补省略号，避免文字画出画布被静默裁掉。 */
+    private fun drawEllipsized(
+        canvas: Canvas,
+        text: String,
+        x: Float,
+        y: Float,
+        maxWidth: Float,
+        paint: Paint,
+    ) {
+        if (maxWidth <= 0f || paint.measureText(text) <= maxWidth) {
+            canvas.drawText(text, x, y, paint)
+            return
+        }
+        val ellipsis = "…"
+        val ellipsisWidth = paint.measureText(ellipsis)
+        var end = text.length
+        while (end > 1 && paint.measureText(text, 0, end) + ellipsisWidth > maxWidth) {
+            end -= 1
+        }
+        canvas.drawText(text.substring(0, end) + ellipsis, x, y, paint)
     }
 
     private fun textPaint(color: Int, size: Float, bold: Boolean = false) =

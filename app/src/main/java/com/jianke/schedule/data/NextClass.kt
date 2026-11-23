@@ -3,6 +3,7 @@ package com.jianke.schedule.data
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * 「今天此刻」的课程状态（今日课程页的倒计时用）。
@@ -93,6 +94,17 @@ data class WidgetBrief(
     val detail: String,
     val total: Int,
     val remaining: Int,
+    /**
+     * 需要 Chronometer 实时倒计时时的剩余毫秒；null = 不显示倒计时。
+     *
+     * 为什么不用「还剩 N 分钟」这种静态文案：小组件的内容只在刷新时才变，
+     * 而刷新最密也就 30 分钟一次，分钟级倒计时必然停在旧值。交给 Chronometer
+     * 后倒计时由桌面进程自己按秒走，App 一次都不需要被唤醒（不耗电），
+     * 到「上下课边界」再刷新一次内容即可。
+     */
+    val countdownRemainingMs: Long? = null,
+    /** Chronometer 的 format（含一个 %s 占位）；空串 = 不显示倒计时。 */
+    val countdownFormat: String = "",
 )
 
 /**
@@ -132,26 +144,38 @@ fun widgetBrief(
         now.isBefore(end)
     }
     return when (val state = currentClassState(courses, now, lessonTimes)) {
-        is ClassNow.Ongoing -> WidgetBrief(
-            hasSchedule = true, hasClassToday = true, dateLine = dateLine,
-            headline = state.course.name,
-            timeLine = "%s - %s".format(
-                lessonTimes[state.course.startPeriod]?.first ?: "",
-                lessonTimes[state.course.endPeriod]?.second ?: "",
-            ),
-            detail = "正在上课，%d 分钟后下课".format(state.minutesLeft),
-            total = courses.size, remaining = remaining,
-        )
-        is ClassNow.Upcoming -> WidgetBrief(
-            hasSchedule = true, hasClassToday = true, dateLine = dateLine,
-            headline = state.course.name,
-            timeLine = "%s - %s".format(
-                lessonTimes[state.course.startPeriod]?.first ?: "",
-                lessonTimes[state.course.endPeriod]?.second ?: "",
-            ),
-            detail = "%d 分钟后上课".format(state.minutesLeft),
-            total = courses.size, remaining = remaining,
-        )
+        is ClassNow.Ongoing -> {
+            val end = lessonTimes[state.course.endPeriod]?.second?.toTimeOrNull()
+            WidgetBrief(
+                hasSchedule = true, hasClassToday = true, dateLine = dateLine,
+                headline = state.course.name,
+                timeLine = "%s - %s".format(
+                    lessonTimes[state.course.startPeriod]?.first ?: "",
+                    lessonTimes[state.course.endPeriod]?.second ?: "",
+                ),
+                detail = "剩余 " + remaining + " 节",
+                total = courses.size, remaining = remaining,
+                countdownRemainingMs = end?.let { Duration.between(now, it).toMillis() }
+                    ?.coerceAtLeast(0L),
+                countdownFormat = "还有 %s 下课",
+            )
+        }
+        is ClassNow.Upcoming -> {
+            val start = lessonTimes[state.course.startPeriod]?.first?.toTimeOrNull()
+            WidgetBrief(
+                hasSchedule = true, hasClassToday = true, dateLine = dateLine,
+                headline = state.course.name,
+                timeLine = "%s - %s".format(
+                    lessonTimes[state.course.startPeriod]?.first ?: "",
+                    lessonTimes[state.course.endPeriod]?.second ?: "",
+                ),
+                detail = "剩余 " + remaining + " 节",
+                total = courses.size, remaining = remaining,
+                countdownRemainingMs = start?.let { Duration.between(now, it).toMillis() }
+                    ?.coerceAtLeast(0L),
+                countdownFormat = "还有 %s 上课",
+            )
+        }
         ClassNow.Finished -> WidgetBrief(
             hasSchedule = true, hasClassToday = true, dateLine = dateLine,
             headline = "今天的课上完了", timeLine = "",
@@ -164,4 +188,36 @@ fun widgetBrief(
             total = courses.size, remaining = 0,
         )
     }
+}
+
+/**
+ * 小组件下一次「内容会变」的时刻（epoch millis）：
+ * 今天剩余课程的上下课边界里最早的一个；没有边界就退到次日 00:00:05。
+ *
+ * 倒计时本身由 Chronometer 实时走，App 不需要每分钟刷新；只在状态切换的边界
+ * （下课/上课/跨日）醒一次，既保证内容正确，又把唤醒次数压到每天个位数。
+ */
+fun nextWidgetRefreshAt(
+    schedule: Schedule?,
+    today: LocalDate,
+    now: LocalTime,
+    zone: ZoneId = ZoneId.systemDefault(),
+    lessonTimes: Map<Int, Pair<String, String>> = schoolLessonTimes,
+): Long {
+    val midnight = today.plusDays(1).atTime(0, 0, 5).atZone(zone).toInstant().toEpochMilli()
+    if (schedule == null) return midnight
+    val week = ScheduleWeek.currentWeekOf(schedule, today)
+    val todayCourses = schedule.coursesOfWeek(week).filter { it.dayOfWeek == today.dayOfWeek.value }
+    val nextBoundary = todayCourses
+        .flatMap { course ->
+            listOfNotNull(
+                lessonTimes[course.startPeriod]?.first?.toTimeOrNull(),
+                lessonTimes[course.endPeriod]?.second?.toTimeOrNull(),
+            )
+        }
+        .filter { it.isAfter(now) }
+        .minOrNull()
+        ?: return midnight
+    val boundaryEpoch = today.atTime(nextBoundary).atZone(zone).toInstant().toEpochMilli()
+    return minOf(boundaryEpoch, midnight)
 }

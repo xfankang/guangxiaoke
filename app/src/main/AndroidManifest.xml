@@ -38,7 +38,7 @@
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.intent.action.DATE_CHANGED" />
-                <action android:name="com.jianke.schedule.action.WIDGET_MIDNIGHT_REFRESH" />
+                <action android:name="com.jianke.schedule.action.WIDGET_TIMED_REFRESH" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

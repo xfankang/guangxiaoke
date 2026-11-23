@@ -17,6 +17,8 @@
 - **今日进度**：按当前时间标注每门课是否上完（nb上完一节课 / nb又上完一节课 / 未完成），全部上完会提示「已完成今日所有课程」
 - **课程详情**：点课程在手指附近弹出浮层（课程名 / 地点 / 教师 / 时间），再点同一位置收起
 - **下一节倒计时**：今日课程页显示「下一节 10:20 · 高等数学 · 还有 12 分钟」/「正在上课 · 还有 25 分钟」
+- **桌面小组件**：今日课程 / 下一节课挂桌面，倒计时实时走秒（Chronometer，App 零唤醒），点击打开 App
+- **分享课表为图片**：设置 → 课表 → 分享课表为图片，生成本周列表式长图（完整课名 / 时间 / 教室 / 教师）
 - **学期周次校正**：自动反推的开学日期不对时，在设置里选「现在是第几周」校正（折算成日期保存）
 - **周末折叠**：周课表可只显示周一至周五（今日课程不受影响）
 - **检查更新**：每天最多一次查询 GitHub 版本号，发现新版只跳浏览器下载（不新增任何权限）
@@ -71,13 +73,15 @@ app/src/main/java/com/jianke/schedule/
 │   ├── ScheduleStore.kt     课表本地存储
 │   ├── ImportDiagnostics.kt 导入诊断文本（周次核对表 / 接口报告）
 │   ├── UpdateChecker.kt     检查更新（版本比较 / Release 解析 / 受限网络请求）
-│   ├── NextClass.kt         今日「下一节 / 正在上 / 已上完」判定
+│   ├── NextClass.kt         今日课程状态 / 小组件文案 / 下一次刷新时刻
 │   ├── CourseColors.kt      课程配色
 │   ├── ClassTimes.kt        作息时间
 │   ├── ImageDecode.kt       图片降采样解码（壁纸 / 彩蛋共用）
 │   ├── Prefs.kt             设置存储
 │   ├── Wallpaper.kt         自定义背景
 │   └── EasterEgg.kt         彩蛋图片加载
+├── widget/
+│   └── TodayWidgetProvider.kt 桌面小组件（RemoteViews + Chronometer 实时倒计时）
 ├── web/
 │   ├── SchoolEndpoints.kt   学校各系统地址
 │   ├── ScheduleJs.kt        页面解析与翻周注入脚本
@@ -88,6 +92,7 @@ app/src/main/java/com/jianke/schedule/
     ├── ImportScreen.kt      导入流程（接口优先，页面兜底）
     ├── SettingsScreen.kt    设置
     ├── FloatingDock.kt      悬浮 Dock 栏
+    ├── ShareCard.kt         课表分享长图（android.graphics 手绘）
     ├── WallpaperEditor.kt   背景构图调整
     ├── SettingsDialogs.kt   学期周次校正弹窗
     ├── UpdateAvailableDialog.kt 发现新版本弹窗
@@ -102,6 +107,8 @@ app/src/main/java/com/jianke/schedule/
 - 导入时通过 WebView 登录学校系统，账号密码不经过本 App，也不做任何存储
 - 启动时（每天最多一次）会向 GitHub 查询是否有新版本：只发一个 GET 请求读版本号，
   不携带任何课表、账号或设备信息，可在设置里关闭「自动检查更新」
+- 桌面小组件只读取本机课表；「分享课表为图片」把 PNG 写进 App 私有缓存目录，
+  经 FileProvider 交给系统分享面板，App 本身不联网上传
 
 ## 鸣谢
 

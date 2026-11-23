@@ -6,6 +6,8 @@ import com.jianke.schedule.data.SemesterInfo
 import com.jianke.schedule.data.widgetBrief
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -39,28 +41,33 @@ class WidgetBriefTest {
         assertFalse(brief.hasSchedule)
         assertEquals("还没有课表", brief.headline)
         assertTrue(brief.detail.contains("导入"))
+        assertNull(brief.countdownRemainingMs)
     }
 
     @Test
-    fun upcomingShowsNextCourse() {
-        // 周六 09:00：只有 3-4 节（10:20-12:00）还没上 → 下一节
+    fun upcomingShowsNextCourseWithCountdown() {
+        // 周六 09:00：只有 3-4 节（10:20-12:00）还没上 → 下一节，倒计时到 10:20
         val schedule = scheduleOf(course("高等数学", 6, 3, 4))
         val brief = widgetBrief(schedule, saturday, LocalTime.of(9, 0))
         assertTrue(brief.hasSchedule)
         assertEquals("高等数学", brief.headline)
         assertTrue(brief.timeLine.contains("10:20"))
-        assertTrue(brief.detail.contains("分钟后上课"))
+        assertEquals("剩余 1 节", brief.detail)
         assertEquals(1, brief.total)
         assertEquals(1, brief.remaining)
+        assertEquals("还有 %s 上课", brief.countdownFormat)
+        assertEquals(80L * 60L * 1000L, brief.countdownRemainingMs)
     }
 
     @Test
-    fun ongoingShowsMinutesLeft() {
+    fun ongoingShowsLiveCountdownToEnd() {
         val schedule = scheduleOf(course("高等数学", 6, 3, 4))
-        // 10:30：课已开始还没结束 → 进行中，剩分钟数出现在 detail
+        // 10:30：课已开始还没结束 → 进行中，倒计时到 12:00
         val brief = widgetBrief(schedule, saturday, LocalTime.of(10, 30))
         assertEquals("高等数学", brief.headline)
-        assertTrue(brief.detail.contains("分钟后下课"))
+        assertEquals("还有 %s 下课", brief.countdownFormat)
+        assertEquals(90L * 60L * 1000L, brief.countdownRemainingMs)
+        assertEquals("剩余 1 节", brief.detail)
         assertEquals(1, brief.remaining)
     }
 
@@ -70,6 +77,8 @@ class WidgetBriefTest {
         val brief = widgetBrief(schedule, saturday, LocalTime.of(23, 0))
         assertEquals("今天的课上完了", brief.headline)
         assertEquals(0, brief.remaining)
+        assertNull(brief.countdownRemainingMs)
+        assertEquals("今天共 1 门课", brief.detail)
     }
 
     @Test
@@ -80,6 +89,7 @@ class WidgetBriefTest {
         assertFalse(brief.hasClassToday)
         assertEquals("今天没有课", brief.headline)
         assertEquals(0, brief.remaining)
+        assertNull(brief.countdownRemainingMs)
     }
 
     @Test
@@ -95,5 +105,16 @@ class WidgetBriefTest {
         val brief = widgetBrief(schedule, saturday, LocalTime.NOON)
         assertEquals("今天的课上完了", brief.headline)
         assertEquals(0, brief.remaining)
+    }
+
+    /** 倒计时目标必须是「现在之后」，否则 Chronometer 一起步就停在 00:00。 */
+    @Test
+    fun countdownIsAlwaysInTheFuture() {
+        val schedule = scheduleOf(course("高等数学", 6, 3, 4))
+        val ongoing = widgetBrief(schedule, saturday, LocalTime.of(10, 30))
+        assertNotNull(ongoing.countdownRemainingMs)
+        assertTrue(ongoing.countdownRemainingMs!! > 0)
+        val upcoming = widgetBrief(schedule, saturday, LocalTime.of(9, 0))
+        assertTrue(upcoming.countdownRemainingMs!! > 0)
     }
 }

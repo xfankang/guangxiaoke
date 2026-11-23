@@ -43,6 +43,7 @@ import com.jianke.schedule.data.ScheduleStore
 import com.jianke.schedule.data.SemesterInfo
 import com.jianke.schedule.data.UpdateChecker
 import com.jianke.schedule.data.Wallpaper
+import com.jianke.schedule.widget.TodayWidgetProvider
 import com.jianke.schedule.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -152,6 +153,8 @@ fun AppRoot() {
         schedule = next
         scope.launch(Dispatchers.IO) {
             runCatching { ScheduleStore.save(context, next) }
+            // 学期周次变了：小组件的「今天/本周」口径也跟着变，立刻刷一次（内部已切 IO）
+            runCatching { TodayWidgetProvider.refreshAll(context) }
         }
     }
 
