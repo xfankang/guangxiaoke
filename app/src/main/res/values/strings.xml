@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">广小课</string>
-    <string name="widget_today_desc">今日课程和下一节课</string>
+    <string name="widget_today_desc">今日课程列表（自适应尺寸）</string>
 </resources>

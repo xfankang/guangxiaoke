@@ -84,110 +84,182 @@ private fun minutesBetween(from: LocalTime, to: LocalTime): Long {
 
 private val DAY_LABELS = listOf("一", "二", "三", "四", "五", "六", "日")
 
-/** 桌面小组件的展示数据：全部是预格式化的字符串，RemoteViews 可直接消费。 */
-data class WidgetBrief(
-    val hasSchedule: Boolean,
-    val hasClassToday: Boolean,
-    val dateLine: String,
-    val headline: String,
-    val timeLine: String,
-    val detail: String,
-    val total: Int,
-    val remaining: Int,
-    /**
-     * 需要 Chronometer 实时倒计时时的剩余毫秒；null = 不显示倒计时。
-     *
-     * 为什么不用「还剩 N 分钟」这种静态文案：小组件的内容只在刷新时才变，
-     * 而刷新最密也就 30 分钟一次，分钟级倒计时必然停在旧值。交给 Chronometer
-     * 后倒计时由桌面进程自己按秒走，App 一次都不需要被唤醒（不耗电），
-     * 到「上下课边界」再刷新一次内容即可。
-     */
-    val countdownRemainingMs: Long? = null,
-    /** Chronometer 的 format（含一个 %s 占位）；空串 = 不显示倒计时。 */
-    val countdownFormat: String = "",
+/** 小组件里一节课的状态（决定文字颜色 / 是否高亮）。 */
+enum class WidgetRowStatus { DONE, ONGOING, UPCOMING }
+
+/** 小组件里一行课的全部展示数据（预格式化，RemoteViews 直接消费）。 */
+data class WidgetRow(
+    val name: String,
+    val timeRange: String,
+    val room: String,
+    val status: WidgetRowStatus,
+    val accent: Int,
 )
 
 /**
- * 组装桌面小组件的展示数据（纯函数，小组件与单测共用）。
+ * 小组件「今天」的全部展示数据。
  *
- * headline 级别从高到低：未导入 → 下一节/正在进行 → 今天没课 → 今天的课上完了。
- * 格子时间取不到的课（脏数据）不参与「还剩几节」的统计，但 headline 仍按
- * [currentClassState] 的口径给出（它自己会跳过解析不了的课）。
+ * [rows] 是已按尺寸窗口截取后的行；[skippedCount] 是窗口前面被略过的「已上完」门数，
+ * [hiddenCount] 是窗口后面没放下的门数，[footer] 已按二者生成好文案。
  */
-fun widgetBrief(
+data class WidgetDay(
+    val hasSchedule: Boolean,
+    val dateLine: String,
+    val summary: String,
+    val rows: List<WidgetRow>,
+    val skippedCount: Int,
+    val hiddenCount: Int,
+    /** Chronometer 实时倒计时的剩余毫秒；null = 不显示倒计时。 */
+    val countdownRemainingMs: Long?,
+    /** Chronometer 的 format（含一个 %s 占位）；空串 = 不显示倒计时。 */
+    val countdownFormat: String,
+    val footer: String,
+)
+
+/**
+ * 组装小组件「今天全天课程」的展示数据（纯函数）。
+ *
+ * 窗口规则（小尺寸优先看到还没上的课）：
+ * - 课程总数 <= maxRows：全部显示；
+ * - 否则从「第一条还没上完的课」开始取 maxRows 行；
+ * - 剩余课程不足 maxRows 时，窗口往前补几门已上完的课把高度填满；
+ * - 窗口前/后略过的门数写进 skippedCount/hiddenCount 与 footer。
+ *
+ * 倒计时取第一条「进行中/还没上」的课：进行中→距下课，未开始→距上课；
+ * 全部上完或今天没课则为 null（头部改显示摘要）。
+ */
+fun widgetDay(
     schedule: Schedule?,
     today: LocalDate,
     now: LocalTime,
+    maxRows: Int,
     lessonTimes: Map<Int, Pair<String, String>> = schoolLessonTimes,
-): WidgetBrief {
+    debugBuild: Boolean = false,
+): WidgetDay {
+    val dateLineBase = "%d月%d日 周%s".format(
+        today.monthValue, today.dayOfMonth, DAY_LABELS[today.dayOfWeek.value - 1],
+    )
+    val dateLine = if (debugBuild) dateLineBase + " · 测试版" else dateLineBase
     if (schedule == null) {
-        return WidgetBrief(
-            hasSchedule = false, hasClassToday = false, dateLine = "",
-            headline = "还没有课表", timeLine = "", detail = "点这里一键导入课表",
-            total = 0, remaining = 0,
+        return WidgetDay(
+            hasSchedule = false, dateLine = dateLine, summary = "还没有课表",
+            rows = emptyList(), skippedCount = 0, hiddenCount = 0,
+            countdownRemainingMs = null, countdownFormat = "",
+            footer = "点此打开 App 导入课表",
         )
     }
     val week = ScheduleWeek.currentWeekOf(schedule, today)
-    val courses = schedule.coursesOfWeek(week).filter { it.dayOfWeek == today.dayOfWeek.value }
-    val dateLine = "%d月%d日 周%s".format(
-        today.monthValue, today.dayOfMonth, DAY_LABELS[today.dayOfWeek.value - 1],
-    )
+    val courses = schedule.coursesOfWeek(week)
+        .filter { it.dayOfWeek == today.dayOfWeek.value }
+        .sortedWith(compareBy({ it.startPeriod }, { it.name }))
     if (courses.isEmpty()) {
-        return WidgetBrief(
-            hasSchedule = true, hasClassToday = false, dateLine = dateLine,
-            headline = "今天没有课", timeLine = "好好休息一下", detail = "",
-            total = 0, remaining = 0,
+        return WidgetDay(
+            hasSchedule = true, dateLine = dateLine, summary = "今天没有课",
+            rows = emptyList(), skippedCount = 0, hiddenCount = 0,
+            countdownRemainingMs = null, countdownFormat = "",
+            footer = "好好休息一下",
         )
     }
-    val remaining = courses.count { c ->
-        val end = lessonTimes[c.endPeriod]?.second?.toTimeOrNull() ?: return@count false
-        now.isBefore(end)
-    }
-    return when (val state = currentClassState(courses, now, lessonTimes)) {
-        is ClassNow.Ongoing -> {
-            val end = lessonTimes[state.course.endPeriod]?.second?.toTimeOrNull()
-            WidgetBrief(
-                hasSchedule = true, hasClassToday = true, dateLine = dateLine,
-                headline = state.course.name,
-                timeLine = "%s - %s".format(
-                    lessonTimes[state.course.startPeriod]?.first ?: "",
-                    lessonTimes[state.course.endPeriod]?.second ?: "",
-                ),
-                detail = "剩余 " + remaining + " 节",
-                total = courses.size, remaining = remaining,
-                countdownRemainingMs = end?.let { Duration.between(now, it).toMillis() }
-                    ?.coerceAtLeast(0L),
-                countdownFormat = "还有 %s 下课",
-            )
+
+    val statuses = courses.map { rowStatusOf(it, now, lessonTimes) }
+    val total = courses.size
+    val limit = maxRows.coerceAtLeast(1)
+    val firstActive = statuses.indexOfFirst { it != WidgetRowStatus.DONE }
+    val windowStart: Int
+    val windowEnd: Int
+    if (total <= limit) {
+        windowStart = 0
+        windowEnd = total
+    } else {
+        val active = if (firstActive >= 0) firstActive else total
+        val remaining = total - active
+        if (remaining >= limit) {
+            windowStart = active
+            windowEnd = minOf(total, active + limit)
+        } else {
+            windowStart = maxOf(0, active - (limit - remaining))
+            windowEnd = minOf(total, windowStart + limit)
         }
-        is ClassNow.Upcoming -> {
-            val start = lessonTimes[state.course.startPeriod]?.first?.toTimeOrNull()
-            WidgetBrief(
-                hasSchedule = true, hasClassToday = true, dateLine = dateLine,
-                headline = state.course.name,
-                timeLine = "%s - %s".format(
-                    lessonTimes[state.course.startPeriod]?.first ?: "",
-                    lessonTimes[state.course.endPeriod]?.second ?: "",
-                ),
-                detail = "剩余 " + remaining + " 节",
-                total = courses.size, remaining = remaining,
-                countdownRemainingMs = start?.let { Duration.between(now, it).toMillis() }
-                    ?.coerceAtLeast(0L),
-                countdownFormat = "还有 %s 上课",
-            )
-        }
-        ClassNow.Finished -> WidgetBrief(
-            hasSchedule = true, hasClassToday = true, dateLine = dateLine,
-            headline = "今天的课上完了", timeLine = "",
-            detail = "今天共 %d 门课".format(courses.size),
-            total = courses.size, remaining = 0,
-        )
-        ClassNow.NoClass -> WidgetBrief(
-            hasSchedule = true, hasClassToday = false, dateLine = dateLine,
-            headline = "今天没有课", timeLine = "好好休息一下", detail = "",
-            total = courses.size, remaining = 0,
+    }
+    val skipped = windowStart
+    val hidden = total - windowEnd
+
+    val rows = (windowStart until windowEnd).map { i ->
+        val course = courses[i]
+        WidgetRow(
+            name = course.name,
+            timeRange = timeRangeOf(course, lessonTimes),
+            room = course.room,
+            status = statuses[i],
+            accent = if (course.color != 0) course.color else CourseColors.of(course.name),
         )
     }
+
+    val ongoing = statuses.indexOfFirst { it == WidgetRowStatus.ONGOING }
+    val upcoming = statuses.indexOfFirst { it == WidgetRowStatus.UPCOMING }
+    val countdownIndex = if (ongoing >= 0) ongoing else upcoming
+    val countdownMs: Long?
+    val countdownFormat: String
+    if (countdownIndex >= 0) {
+        val course = courses[countdownIndex]
+        if (ongoing >= 0) {
+            val end = lessonTimes[course.endPeriod]?.second?.toTimeOrNull()
+            countdownMs = end?.let { Duration.between(now, it).toMillis() }?.coerceAtLeast(0L)
+            countdownFormat = "还有 %s 下课"
+        } else {
+            val start = lessonTimes[course.startPeriod]?.first?.toTimeOrNull()
+            countdownMs = start?.let { Duration.between(now, it).toMillis() }?.coerceAtLeast(0L)
+            countdownFormat = "还有 %s 上课"
+        }
+    } else {
+        countdownMs = null
+        countdownFormat = ""
+    }
+
+    val allDone = statuses.all { it == WidgetRowStatus.DONE }
+    val footer = when {
+        hidden > 0 -> "还有 " + hidden + " 门课，点开看全部"
+        skipped > 0 -> "早先 " + skipped + " 门已上完"
+        allDone -> "今天的课上完了"
+        else -> ""
+    }
+
+    return WidgetDay(
+        hasSchedule = true,
+        dateLine = dateLine,
+        summary = "共 " + total + " 门课",
+        rows = rows,
+        skippedCount = skipped,
+        hiddenCount = hidden,
+        countdownRemainingMs = countdownMs,
+        countdownFormat = countdownFormat,
+        footer = footer,
+    )
+}
+
+private fun rowStatusOf(
+    course: Course,
+    now: LocalTime,
+    lessonTimes: Map<Int, Pair<String, String>>,
+): WidgetRowStatus {
+    val start = lessonTimes[course.startPeriod]?.first?.toTimeOrNull()
+    val end = lessonTimes[course.endPeriod]?.second?.toTimeOrNull()
+    // 作息查不到的脏课照常列出来（信息比静默丢掉更重要），状态按「还没上」处理
+    if (start == null || end == null) return WidgetRowStatus.UPCOMING
+    return when {
+        !now.isBefore(end) -> WidgetRowStatus.DONE
+        !now.isBefore(start) -> WidgetRowStatus.ONGOING
+        else -> WidgetRowStatus.UPCOMING
+    }
+}
+
+private fun timeRangeOf(
+    course: Course,
+    lessonTimes: Map<Int, Pair<String, String>>,
+): String {
+    val start = lessonTimes[course.startPeriod]?.first
+    val end = lessonTimes[course.endPeriod]?.second
+    return if (start != null && end != null) start + "-" + end else "时间待定"
 }
 
 /**

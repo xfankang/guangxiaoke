@@ -1,5 +1,8 @@
 package com.jianke.schedule.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -27,6 +30,7 @@ import com.jianke.schedule.data.AppRelease
 import com.jianke.schedule.data.EasterEgg
 import com.jianke.schedule.data.Prefs
 import com.jianke.schedule.data.Schedule
+import com.jianke.schedule.data.ScheduleSelfCheck
 import com.jianke.schedule.data.ScheduleWeek
 import com.jianke.schedule.data.UpdateChecker
 import com.jianke.schedule.data.Wallpaper
@@ -115,6 +119,7 @@ fun SettingsScreen(
     // 学期校正弹窗 / 更新检查的状态
     var showSemesterDialog by remember { mutableStateOf(false) }
     var checkState by remember { mutableStateOf<CheckState>(CheckState.Idle) }
+    var selfCheckHint by remember { mutableStateOf("") }
 
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -331,6 +336,33 @@ fun SettingsScreen(
                 },
                 showChevron = false,
             )
+            SettingRow(
+                icon = MiuixIcons.Update,
+                title = "课表数据自检",
+                summary = "复制记录明细（周次原文 → 解析结果 / 今日课程），便于排查",
+                onClick = {
+                    val s = schedule
+                    if (s == null) {
+                        selfCheckHint = "还没有课表"
+                    } else {
+                        val text = runCatching { ScheduleSelfCheck.report(s) }
+                            .getOrElse { "自检生成失败：" + it.javaClass.simpleName }
+                        val clipboard =
+                            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("广小课课表自检", text))
+                        selfCheckHint = "已复制，可发给开发者排查"
+                    }
+                },
+                showChevron = false,
+            )
+            if (selfCheckHint.isNotBlank()) {
+                Text(
+                    text = selfCheckHint,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 62.dp, bottom = 4.dp),
+                )
+            }
             Text(
                 text = "周次按开学日期推算；发现不对时点「学期周次」校正，校正不会改动课表内容。",
                 style = MiuixTheme.textStyles.footnote2,

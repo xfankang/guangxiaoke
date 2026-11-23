@@ -67,6 +67,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.jianke.schedule.data.ClassNow
 import com.jianke.schedule.data.Course
+import com.jianke.schedule.data.CourseSessions
 import com.jianke.schedule.data.Schedule
 import com.jianke.schedule.data.currentClassState
 import com.jianke.schedule.data.layoutDay
@@ -137,6 +138,9 @@ fun HomeScreen(
     }
 
     var selectedCourse by remember { mutableStateOf<Course?>(null) }
+    // 同一门课（课名+教师相同）的其他时段：教务常把一门课拆成多条记录，
+    // 浮窗里一起列出来，用户才不会以为「周次解析错了」
+    var selectedOtherSessions by remember { mutableStateOf<List<Course>>(emptyList()) }
     var anchorRect by remember { mutableStateOf<Rect?>(null) }
     var lastDismissAt by remember { mutableStateOf(0L) }
     // 浮窗出入动画的开关：与 selectedCourse 分开管理，关闭时先播退出动画再移除浮层
@@ -250,6 +254,9 @@ fun HomeScreen(
                                         detailVisible = false
                                     } else {
                                         selectedCourse = course
+                                        selectedOtherSessions = CourseSessions
+                                            .sessionsOf(schedule, course)
+                                            .filter { it != course }
                                         anchorRect = rect
                                         detailVisible = true
                                     }
@@ -306,7 +313,7 @@ fun HomeScreen(
                     cornerRadius = 18.dp,
                     insideMargin = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
                 ) {
-                    CourseDetailCard(course = course)
+                    CourseDetailCard(course = course, otherSessions = selectedOtherSessions)
                 }
             }
         }
@@ -842,11 +849,12 @@ private class CoursePopupPositionProvider(private val anchor: Rect) : PopupPosit
 /**
  * 点课程后的详情浮层。
  *
- * 除了课程名、地点、教师、节次，补上了原来自上而下一直没露面的「上课时段」和「周次」——
- * Course 里本来就有，只是之前没显示。
+ * 除了课程名、地点、教师、节次、周次，还会列出「同一门课的其他时段」——
+ * 教务常把一门课拆成多条排课记录（调课/分周次/分教室），各条记录周次不同是正常的；
+ * 不列出来用户会以为周次解析错了。
  */
 @Composable
-private fun CourseDetailCard(course: Course) {
+private fun CourseDetailCard(course: Course, otherSessions: List<Course>) {
     val accent = courseAccent(course.color)
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -862,15 +870,14 @@ private fun CourseDetailCard(course: Course) {
                 style = MiuixTheme.textStyles.title4,
             )
         }
-        if (course.weeksText.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = course.weeksText,
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onBackgroundVariant,
-                modifier = Modifier.padding(start = 18.dp),
-            )
-        }
+        // 本时段的周次：优先用接口原文，原文为空时用解析结果兜底
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = CourseSessions.weeksLabel(course),
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onBackgroundVariant,
+            modifier = Modifier.padding(start = 18.dp),
+        )
         Spacer(Modifier.height(12.dp))
         Hairline()
         Spacer(Modifier.height(8.dp))
@@ -880,12 +887,63 @@ private fun CourseDetailCard(course: Course) {
             label = "节次",
             value = "周" + DAY_LABELS[course.dayOfWeek - 1] + " 第 " + course.periodText + " 节",
         )
-        val first = schoolLessonTimes[course.startPeriod]
-        val last = schoolLessonTimes[course.endPeriod]
-        if (first != null && last != null) {
-            InfoRow(label = "时间", value = first.first + " - " + last.second)
+        val range = lessonRangeText(course)
+        if (range != null) {
+            InfoRow(label = "时间", value = range)
+        }
+
+        // 同一门课的其他时段（最多列 4 个，避免浮窗过高）
+        if (otherSessions.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Hairline()
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "同一门课的其他时段",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+            )
+            otherSessions.take(4).forEach { session ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "周" + DAY_LABELS[session.dayOfWeek - 1] + " 第 " +
+                        session.periodText + " 节 · " + CourseSessions.weeksLabel(session),
+                    style = MiuixTheme.textStyles.body2,
+                )
+                Spacer(Modifier.height(2.dp))
+                val detail = listOf(
+                    session.room.ifBlank { "教室待定" },
+                    lessonRangeText(session) ?: "时间待定",
+                ).joinToString(" · ")
+                Text(
+                    text = detail,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
+                    modifier = Modifier.padding(start = 2.dp),
+                )
+            }
+            if (otherSessions.size > 4) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "…另有 " + (otherSessions.size - 4) + " 个时段",
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onBackgroundVariant,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "教务常把同一门课拆成多条记录（调课/分周次/分教室），各时段周次不同属正常；如有时间冲突以教务为准。",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onBackgroundVariant,
+            )
         }
     }
+}
+
+/** 一节课的上下课时间范围；作息表查不到返回 null。 */
+private fun lessonRangeText(course: Course): String? {
+    val first = schoolLessonTimes[course.startPeriod]
+    val last = schoolLessonTimes[course.endPeriod]
+    return if (first != null && last != null) first.first + " - " + last.second else null
 }
 
 private const val STATUS_DONE = 0
