@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 小组件 receiver 声明了 BOOT_COMPLETED：没有这个权限，系统不会投递开机广播 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
         <!-- miuix-blur 声明 minSdk 33（AGSL 折射），KSU 同款做法：低版本运行时自动降级，这里强制合并 -->
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />

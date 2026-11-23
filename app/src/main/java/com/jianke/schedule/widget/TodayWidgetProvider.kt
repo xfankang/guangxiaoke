@@ -13,6 +13,10 @@ import com.jianke.schedule.MainActivity
 import com.jianke.schedule.R
 import com.jianke.schedule.data.ScheduleStore
 import com.jianke.schedule.data.widgetBrief
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /**
@@ -86,13 +90,30 @@ class TodayWidgetProvider : AppWidgetProvider() {
         const val ACTION_MIDNIGHT_REFRESH = "com.jianke.schedule.action.WIDGET_MIDNIGHT_REFRESH"
         private const val TAG = "GxkWidget"
 
-        /** App 内数据变化（导入完成等）时主动刷一遍所有小组件。 */
+        /**
+         * App 内数据变化（导入完成、回到前台等）时主动刷一遍所有小组件。
+         *
+         * 读本地课表 + JSON 解析 + RemoteViews 组装都放 IO：
+         * 这个入口挂在 MainActivity.onResume 上，不能每次回前台都在主线程做一遍文件 IO。
+         */
         fun refreshAll(context: Context) {
-            val manager = AppWidgetManager.getInstance(context)
-            val ids = manager.getAppWidgetIds(ComponentName(context, TodayWidgetProvider::class.java))
-            Log.i(TAG, "refreshAll ids=${ids.contentToString()}")
-            TodayWidgetProvider().onUpdate(context, manager, ids)
+            val appContext = context.applicationContext
+            ioScope.launch {
+                runCatching {
+                    val manager = AppWidgetManager.getInstance(appContext)
+                    val ids = manager.getAppWidgetIds(
+                        ComponentName(appContext, TodayWidgetProvider::class.java),
+                    )
+                    if (ids.isEmpty()) return@runCatching
+                    Log.i(TAG, "refreshAll ids=${ids.contentToString()}")
+                    TodayWidgetProvider().refresh(appContext, manager, ids)
+                    scheduleMidnightRefresh(appContext)
+                }.onFailure { Log.e(TAG, "refreshAll failed", it) }
+            }
         }
+
+        /** 小组件刷新的后台作用域：不持有 Activity，只拿 applicationContext。 */
+        private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         /** 排下一次跨日刷新（次日 00:00:05）：日期和「今天还有几节」都要跟着日历走。 */
         fun scheduleMidnightRefresh(context: Context) {

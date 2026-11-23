@@ -33,8 +33,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -140,13 +142,25 @@ fun HomeScreen(
     // 浮窗出入动画的开关：与 selectedCourse 分开管理，关闭时先播退出动画再移除浮层
     var detailVisible by remember { mutableStateOf(false) }
 
-    // 「正在进行」高亮用的当前时刻：30 秒一跳，与「今日课程」的倒计时口径一致
+    // 「正在进行」高亮用的当前时刻：30 秒一跳，与「今日课程」的倒计时口径一致。
+    // 退到后台后不再唤醒（与 4.3.11 给今日课程加的是同一套生命周期保护），
+    // 回前台立刻补一次，避免高亮停在切出去那一刻的旧状态。
+    val highlightLifecycle = LocalLifecycleOwner.current.lifecycle
     var clockNow by remember { mutableStateOf(LocalTime.now()) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(highlightLifecycle) {
         while (true) {
             delay(30_000L)
-            clockNow = LocalTime.now()
+            if (highlightLifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                clockNow = LocalTime.now()
+            }
         }
+    }
+    DisposableEffect(highlightLifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) clockNow = LocalTime.now()
+        }
+        highlightLifecycle.addObserver(observer)
+        onDispose { highlightLifecycle.removeObserver(observer) }
     }
 
     Column(
