@@ -99,18 +99,16 @@ data class WidgetRow(
 /**
  * 小组件「今天」的全部展示数据。
  *
- * [rows] 是已按尺寸窗口截取后的行；[skippedCount] 是窗口前面被略过的「已上完」门数，
- * [hiddenCount] 是窗口后面没放下的门数，[footer] 已按二者生成好文案。
+ * [rows] 一定是**当天全部课程**（按节次排序，不截断、不跳过）——
+ * 行数放不下由 [WidgetLayout.chooseLayout] 通过降档行高解决。
+ * 头部不再显示「今天的课上完了」这类冗余文案，全部上完时 [headerHint] 为空。
  */
 data class WidgetDay(
     val hasSchedule: Boolean,
     val dateLine: String,
-    /** 头部右侧的「几点下课 / 几点上课」：绝对时间，任何时候都不会算错。 */
+    /** 头部右侧的「几点下课 / 几点上课」：绝对时间，任何时候都不会算错；无提示时为空串。 */
     val headerHint: String,
     val rows: List<WidgetRow>,
-    val skippedCount: Int,
-    val hiddenCount: Int,
-    val footer: String,
 )
 
 /**
@@ -118,19 +116,15 @@ data class WidgetDay(
  *
  * 头部刻意不用「剩余 mm:ss 倒计时」：小组件进程会被系统冻结/重建，
  * Chronometer 的倒计时基准在 HyperOS 上会被弄乱（出现「还有 8:15:30 下课」这种错值）。
- * 改成显示「10:00 下课 / 10:20 上课」的绝对时间，任何刷新时机都不会算错。
+ * 改成显示「10:00 下课 / 10:20 上课」的绝对时间，任何刷新时机都不会算错；
+ * 全部上完时头部留空（每个圆点都变成 ✓，用户一眼就知道上完了）。
  *
- * 窗口规则（小尺寸优先看到还没上的课）：
- * - 课程总数 <= maxRows：全部显示；
- * - 否则从「第一条还没上完的课」开始取 maxRows 行；
- * - 剩余课程不足 maxRows 时，窗口往前补几门已上完的课把高度填满；
- * - 窗口前/后略过的门数写进 skippedCount/hiddenCount 与 footer。
+ * 返回的行是全天全部课程，不做任何窗口截断。
  */
 fun widgetDay(
     schedule: Schedule?,
     today: LocalDate,
     now: LocalTime,
-    maxRows: Int,
     lessonTimes: Map<Int, Pair<String, String>> = schoolLessonTimes,
     debugBuild: Boolean = false,
 ): WidgetDay {
@@ -140,9 +134,8 @@ fun widgetDay(
     val dateLine = if (debugBuild) dateLineBase + " · 测试版" else dateLineBase
     if (schedule == null) {
         return WidgetDay(
-            hasSchedule = false, dateLine = dateLine, headerHint = "",
-            rows = emptyList(), skippedCount = 0, hiddenCount = 0,
-            footer = "点此打开 App 导入课表",
+            hasSchedule = false, dateLine = dateLine, headerHint = "点此导入课表",
+            rows = emptyList(),
         )
     }
     val week = ScheduleWeek.currentWeekOf(schedule, today)
@@ -152,36 +145,12 @@ fun widgetDay(
     if (courses.isEmpty()) {
         return WidgetDay(
             hasSchedule = true, dateLine = dateLine, headerHint = "今天没有课",
-            rows = emptyList(), skippedCount = 0, hiddenCount = 0,
-            footer = "好好休息一下",
+            rows = emptyList(),
         )
     }
 
     val statuses = courses.map { rowStatusOf(it, now, lessonTimes) }
-    val total = courses.size
-    val limit = maxRows.coerceAtLeast(1)
-    val firstActive = statuses.indexOfFirst { it != WidgetRowStatus.DONE }
-    val windowStart: Int
-    val windowEnd: Int
-    if (total <= limit) {
-        windowStart = 0
-        windowEnd = total
-    } else {
-        val active = if (firstActive >= 0) firstActive else total
-        val remaining = total - active
-        if (remaining >= limit) {
-            windowStart = active
-            windowEnd = minOf(total, active + limit)
-        } else {
-            windowStart = maxOf(0, active - (limit - remaining))
-            windowEnd = minOf(total, windowStart + limit)
-        }
-    }
-    val skipped = windowStart
-    val hidden = total - windowEnd
-
-    val rows = (windowStart until windowEnd).map { i ->
-        val course = courses[i]
+    val rows = courses.mapIndexed { i, course ->
         WidgetRow(
             name = course.name,
             timeRange = timeRangeOf(course, lessonTimes),
@@ -193,17 +162,10 @@ fun widgetDay(
 
     val ongoing = statuses.indexOfFirst { it == WidgetRowStatus.ONGOING }
     val upcoming = statuses.indexOfFirst { it == WidgetRowStatus.UPCOMING }
-    val allDone = statuses.all { it == WidgetRowStatus.DONE }
     val headerHint = when {
         ongoing >= 0 -> lessonTimes[courses[ongoing].endPeriod]?.second?.plus(" 下课").orEmpty()
         upcoming >= 0 -> lessonTimes[courses[upcoming].startPeriod]?.first?.plus(" 上课").orEmpty()
-        allDone -> "今天的课上完了"
-        else -> ""
-    }
-    val footer = when {
-        hidden > 0 -> "还有 " + hidden + " 门课，点开看全部"
-        skipped > 0 -> "早先 " + skipped + " 门已上完"
-        else -> ""
+        else -> "" // 全部上完：不显示多余文字，圆点已变成 ✓
     }
 
     return WidgetDay(
@@ -211,9 +173,6 @@ fun widgetDay(
         dateLine = dateLine,
         headerHint = headerHint,
         rows = rows,
-        skippedCount = skipped,
-        hiddenCount = hidden,
-        footer = footer,
     )
 }
 

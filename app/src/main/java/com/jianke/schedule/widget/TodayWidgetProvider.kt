@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import com.jianke.schedule.BuildConfig
@@ -30,17 +31,15 @@ import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 
 /**
- * 「今日课程」桌面小组件：日期 + 今天全部课程（可自适应组件尺寸）+ 「几点下课/上课」。
+ * 「今日课程」桌面小组件：日期 + 今天全部课程（自适应行高，绝不丢课）。
  *
  * 设计要点：
- * - 一个组件里列出当天所有课程，不再只显示一条「下一节」；已知每天最多 5 节，
- *   所以按组件尺寸最多排 5 行，组件够高时自动换大字宽松行，字不会太小、也不会空一大块；
- * - 头部显示「10:00 下课 / 10:20 上课」的绝对时间，而不是每秒倒计时：
- *   小组件进程会被系统冻结/重建，Chronometer 的倒计时基准在 HyperOS 上会被弄乱
- *   （出现「还有 8:15:30 下课」这种错值），绝对时间永远不会算错；
- * - 宽度不够时只简化课程名（机械CAD/CAM-Solidworks → 机械CAD），空间足够就用全名；
- * - 小尺寸优先显示还没上的课（窗口从第一条未上完的课开始），已上完的用底部提示说明；
- * - 进行中的课行底色高亮、已上完的文字变暗；
+ * - **当天所有课程都显示**（已知每天最多 5 节）：按组件高度在 XL/L/M/S 四档行样式里
+ *   挑能放下全部行的最大一档，字号不会小到看不清；极矮组件才隐藏日期头部保课程；
+ * - 已完成课程的行首标记是**同色打勾「✓」**，进行中/未开始是「●」；
+ * - 头部只保留「10:00 下课 / 10:20 上课」的绝对时间；全部上完时头部留空，
+ *   不再显示「今天的课上完了 / 早先 N 门已上完 / 还有 N 门课」这类多余文字；
+ * - 绝对时间不依赖倒计时基准，HyperOS 冻结/重建小组件也不会算错；
  * - 只在上下课边界/跨日刷一次（inexact 闹钟，不申请精确闹钟权限），
  *   另有 updatePeriodMillis 30 分钟、开机/改时间/时区/日期等系统事件兜底，
  *   App 内数据变化（回前台/导入完成/学期校正）也会立刻刷新；
@@ -127,25 +126,10 @@ class TodayWidgetProvider : AppWidgetProvider() {
                     val widthDp = (if (portrait) minW else maxW).takeIf { it > 0 } ?: 250
                     val heightDp = (if (portrait) maxH else minH).takeIf { it > 0 } ?: 110
                     val day: WidgetDay = try {
-                        // 先按最多 5 行探测今天实际要显示几门，再决定放大字行还是普通行
-                        val probe = widgetDay(
-                            schedule = schedule,
-                            today = today,
-                            now = nowTime,
-                            maxRows = WidgetLayout.MAX_ROWS,
-                            debugBuild = BuildConfig.DEBUG,
-                        )
-                        val style = WidgetLayout.rowStyleFor(heightDp, probe.rows.size)
-                        val capacity = if (style == WidgetLayout.RowStyle.LARGE) {
-                            WidgetLayout.MAX_ROWS
-                        } else {
-                            WidgetLayout.maxRowsFor(heightDp)
-                        }
                         widgetDay(
                             schedule = schedule,
                             today = today,
                             now = nowTime,
-                            maxRows = capacity,
                             debugBuild = BuildConfig.DEBUG,
                         )
                     } catch (t: Throwable) {
@@ -155,22 +139,21 @@ class TodayWidgetProvider : AppWidgetProvider() {
                             dateLine = today.toString(),
                             headerHint = "",
                             rows = emptyList(),
-                            skippedCount = 0,
-                            hiddenCount = 0,
-                            footer = t.javaClass.simpleName,
                         )
                     }
+                    // 全部课程必须显示：按高度挑能放下全部行的最大字号档
+                    val layout = WidgetLayout.chooseLayout(heightDp, day.rows.size)
                     Log.i(
                         TAG,
                         "id=$id options min=${minW}x${minH} max=${maxW}x${maxH} " +
                             "portrait=$portrait use=${widthDp}x${heightDp} " +
-                            "rows=${day.rows.size} hidden=${day.hiddenCount} hint=${day.headerHint}",
+                            "rows=${day.rows.size} style=${layout.style} header=${layout.showHeader}",
                     )
                     val views = buildViews(
                         context = context,
                         day = day,
                         widthDp = widthDp,
-                        style = WidgetLayout.rowStyleFor(heightDp, day.rows.size),
+                        layout = layout,
                     )
                     manager.updateAppWidget(id, views)
                 }.onFailure { Log.e(TAG, "render failed id=$id", it) }
@@ -187,7 +170,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
             context: Context,
             day: WidgetDay,
             widthDp: Int,
-            style: WidgetLayout.RowStyle,
+            layout: WidgetLayout.RowLayout,
         ): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_today)
             views.setTextViewText(R.id.widget_date, day.dateLine)
@@ -196,10 +179,10 @@ class TodayWidgetProvider : AppWidgetProvider() {
                 R.id.widget_hint,
                 if (day.headerHint.isBlank()) View.GONE else View.VISIBLE,
             )
-            views.setTextViewText(R.id.widget_footer, day.footer)
+            // 只有极矮、带头部放不下全部课程时才隐藏头部，优先保证课程全部可见
             views.setViewVisibility(
-                R.id.widget_footer,
-                if (day.footer.isBlank()) View.GONE else View.VISIBLE,
+                R.id.widget_header,
+                if (layout.showHeader) View.VISIBLE else View.GONE,
             )
             val showTime = WidgetLayout.showTime(widthDp)
             val showRoom = WidgetLayout.showRoom(widthDp)
@@ -208,7 +191,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
             day.rows.forEach { row ->
                 views.addView(
                     R.id.widget_rows,
-                    buildRow(context, row, style, widthDp, showTime, showRoom),
+                    buildRow(context, row, layout.style, widthDp, showTime, showRoom),
                 )
             }
             val open = PendingIntent.getActivity(
@@ -230,14 +213,27 @@ class TodayWidgetProvider : AppWidgetProvider() {
             showRoom: Boolean,
         ): RemoteViews {
             val roomShown = showRoom && row.room.isNotBlank()
-            val layout = if (style == WidgetLayout.RowStyle.LARGE) {
-                R.layout.widget_today_row_large
-            } else {
-                R.layout.widget_today_row
+            val layoutRes = when (style) {
+                WidgetLayout.RowStyle.XL -> R.layout.widget_today_row_large
+                WidgetLayout.RowStyle.L -> R.layout.widget_today_row
+                WidgetLayout.RowStyle.M -> R.layout.widget_today_row_medium
+                WidgetLayout.RowStyle.S -> R.layout.widget_today_row_small
             }
-            val views = RemoteViews(context.packageName, layout)
-            views.setTextViewText(R.id.row_dot, "●")
+            val views = RemoteViews(context.packageName, layoutRes)
+            // 行首标记：已完成 = 打勾（与课程色一致、略放大更醒目），进行中/未开始 = 圆点
+            views.setTextViewText(R.id.row_dot, WidgetLayout.markFor(row.status))
             views.setTextColor(R.id.row_dot, row.accent)
+            val dotSizeSp = when (style) {
+                WidgetLayout.RowStyle.XL -> 11f
+                WidgetLayout.RowStyle.L -> 10f
+                WidgetLayout.RowStyle.M -> 9f
+                WidgetLayout.RowStyle.S -> 8f
+            }
+            views.setTextViewTextSize(
+                R.id.row_dot,
+                TypedValue.COMPLEX_UNIT_SP,
+                if (row.status == WidgetRowStatus.DONE) dotSizeSp + 2f else dotSizeSp,
+            )
             views.setTextViewText(R.id.row_time, row.timeRange)
             // 宽度不够时才简化课程名（空间足够保持全名）
             views.setTextViewText(

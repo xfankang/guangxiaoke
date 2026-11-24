@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- S 行（20dp）：组件很矮时用，优先保证当天全部课程都能显示 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/row_root"
+    android:layout_width="match_parent"
+    android:layout_height="20dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="2dp">
+
+    <TextView
+        android:id="@+id/row_dot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="●"
+        android:textSize="8sp"
+        android:maxLines="1" />
+
+    <TextView
+        android:id="@+id/row_time"
+        android:layout_width="54dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="2dp"
+        android:textColor="#CCFFFFFF"
+        android:textSize="9sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/row_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="3dp"
+        android:textColor="#F2F2F2"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/row_room"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="3dp"
+        android:maxWidth="76dp"
+        android:textColor="#CCFFFFFF"
+        android:textSize="8.5sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+</LinearLayout>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 普通行（30dp）：色点 + 时间 + 课名 + 教室；宽度不够时 Provider 会隐藏时间/教室并简化课名 -->
+<!-- L 行（30dp）：色点/打勾 + 时间 + 课名 + 教室；宽度不够时 Provider 会隐藏时间/教室并简化课名 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/row_root"
     android:layout_width="match_parent"
@@ -13,7 +13,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="●"
-        android:textSize="9sp"
+        android:textSize="10sp"
         android:maxLines="1" />
 
     <TextView

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 尺寸常量与 data/WidgetLayout.kt 保持一致：头部 18dp / 普通行 30dp / 宽松行 36dp / 底部 12dp / 上下内边距 8dp -->
+<!-- 尺寸常量与 data/WidgetLayout.kt 保持一致：头部 16dp / 上下内边距 4dp；行高由 row 布局决定。
+     没有底部提示行：当天所有课程都必须显示，不再出现「早先 N 门已上完」这类文字。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -7,13 +8,13 @@
     android:orientation="vertical"
     android:background="@drawable/widget_bg"
     android:paddingHorizontal="10dp"
-    android:paddingVertical="4dp"
+    android:paddingVertical="2dp"
     android:gravity="center_vertical">
 
     <LinearLayout
         android:id="@+id/widget_header"
         android:layout_width="match_parent"
-        android:layout_height="18dp"
+        android:layout_height="16dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -43,15 +44,4 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical" />
-
-    <TextView
-        android:id="@+id/widget_footer"
-        android:layout_width="match_parent"
-        android:layout_height="12dp"
-        android:gravity="center_vertical"
-        android:textColor="#80FFFFFF"
-        android:textSize="10sp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:visibility="gone" />
 </LinearLayout>

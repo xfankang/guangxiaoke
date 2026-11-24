@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- M 行（24dp）：组件高度中等时用（比 L 更紧凑，保证全部课程放得下） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/row_root"
+    android:layout_width="match_parent"
+    android:layout_height="24dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="3dp">
+
+    <TextView
+        android:id="@+id/row_dot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="●"
+        android:textSize="9sp"
+        android:maxLines="1" />
+
+    <TextView
+        android:id="@+id/row_time"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="3dp"
+        android:textColor="#CCFFFFFF"
+        android:textSize="9.5sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/row_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="4dp"
+        android:textColor="#F2F2F2"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/row_room"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:maxWidth="88dp"
+        android:textColor="#CCFFFFFF"
+        android:textSize="9sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+</LinearLayout>
