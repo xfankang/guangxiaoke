@@ -105,28 +105,26 @@ data class WidgetRow(
 data class WidgetDay(
     val hasSchedule: Boolean,
     val dateLine: String,
-    val summary: String,
+    /** 头部右侧的「几点下课 / 几点上课」：绝对时间，任何时候都不会算错。 */
+    val headerHint: String,
     val rows: List<WidgetRow>,
     val skippedCount: Int,
     val hiddenCount: Int,
-    /** Chronometer 实时倒计时的剩余毫秒；null = 不显示倒计时。 */
-    val countdownRemainingMs: Long?,
-    /** Chronometer 的 format（含一个 %s 占位）；空串 = 不显示倒计时。 */
-    val countdownFormat: String,
     val footer: String,
 )
 
 /**
  * 组装小组件「今天全天课程」的展示数据（纯函数）。
  *
+ * 头部刻意不用「剩余 mm:ss 倒计时」：小组件进程会被系统冻结/重建，
+ * Chronometer 的倒计时基准在 HyperOS 上会被弄乱（出现「还有 8:15:30 下课」这种错值）。
+ * 改成显示「10:00 下课 / 10:20 上课」的绝对时间，任何刷新时机都不会算错。
+ *
  * 窗口规则（小尺寸优先看到还没上的课）：
  * - 课程总数 <= maxRows：全部显示；
  * - 否则从「第一条还没上完的课」开始取 maxRows 行；
  * - 剩余课程不足 maxRows 时，窗口往前补几门已上完的课把高度填满；
  * - 窗口前/后略过的门数写进 skippedCount/hiddenCount 与 footer。
- *
- * 倒计时取第一条「进行中/还没上」的课：进行中→距下课，未开始→距上课；
- * 全部上完或今天没课则为 null（头部改显示摘要）。
  */
 fun widgetDay(
     schedule: Schedule?,
@@ -142,9 +140,8 @@ fun widgetDay(
     val dateLine = if (debugBuild) dateLineBase + " · 测试版" else dateLineBase
     if (schedule == null) {
         return WidgetDay(
-            hasSchedule = false, dateLine = dateLine, summary = "还没有课表",
+            hasSchedule = false, dateLine = dateLine, headerHint = "",
             rows = emptyList(), skippedCount = 0, hiddenCount = 0,
-            countdownRemainingMs = null, countdownFormat = "",
             footer = "点此打开 App 导入课表",
         )
     }
@@ -154,9 +151,8 @@ fun widgetDay(
         .sortedWith(compareBy({ it.startPeriod }, { it.name }))
     if (courses.isEmpty()) {
         return WidgetDay(
-            hasSchedule = true, dateLine = dateLine, summary = "今天没有课",
+            hasSchedule = true, dateLine = dateLine, headerHint = "今天没有课",
             rows = emptyList(), skippedCount = 0, hiddenCount = 0,
-            countdownRemainingMs = null, countdownFormat = "",
             footer = "好好休息一下",
         )
     }
@@ -197,42 +193,26 @@ fun widgetDay(
 
     val ongoing = statuses.indexOfFirst { it == WidgetRowStatus.ONGOING }
     val upcoming = statuses.indexOfFirst { it == WidgetRowStatus.UPCOMING }
-    val countdownIndex = if (ongoing >= 0) ongoing else upcoming
-    val countdownMs: Long?
-    val countdownFormat: String
-    if (countdownIndex >= 0) {
-        val course = courses[countdownIndex]
-        if (ongoing >= 0) {
-            val end = lessonTimes[course.endPeriod]?.second?.toTimeOrNull()
-            countdownMs = end?.let { Duration.between(now, it).toMillis() }?.coerceAtLeast(0L)
-            countdownFormat = "还有 %s 下课"
-        } else {
-            val start = lessonTimes[course.startPeriod]?.first?.toTimeOrNull()
-            countdownMs = start?.let { Duration.between(now, it).toMillis() }?.coerceAtLeast(0L)
-            countdownFormat = "还有 %s 上课"
-        }
-    } else {
-        countdownMs = null
-        countdownFormat = ""
-    }
-
     val allDone = statuses.all { it == WidgetRowStatus.DONE }
+    val headerHint = when {
+        ongoing >= 0 -> lessonTimes[courses[ongoing].endPeriod]?.second?.plus(" 下课").orEmpty()
+        upcoming >= 0 -> lessonTimes[courses[upcoming].startPeriod]?.first?.plus(" 上课").orEmpty()
+        allDone -> "今天的课上完了"
+        else -> ""
+    }
     val footer = when {
         hidden > 0 -> "还有 " + hidden + " 门课，点开看全部"
         skipped > 0 -> "早先 " + skipped + " 门已上完"
-        allDone -> "今天的课上完了"
         else -> ""
     }
 
     return WidgetDay(
         hasSchedule = true,
         dateLine = dateLine,
-        summary = "共 " + total + " 门课",
+        headerHint = headerHint,
         rows = rows,
         skippedCount = skipped,
         hiddenCount = hidden,
-        countdownRemainingMs = countdownMs,
-        countdownFormat = countdownFormat,
         footer = footer,
     )
 }
@@ -266,8 +246,8 @@ private fun timeRangeOf(
  * 小组件下一次「内容会变」的时刻（epoch millis）：
  * 今天剩余课程的上下课边界里最早的一个；没有边界就退到次日 00:00:05。
  *
- * 倒计时本身由 Chronometer 实时走，App 不需要每分钟刷新；只在状态切换的边界
- * （下课/上课/跨日）醒一次，既保证内容正确，又把唤醒次数压到每天个位数。
+ * 头部显示的是「几点下课/上课」这类绝对时间，不需要每秒刷新；
+ * 只在状态切换的边界（下课/上课/跨日）醒一次，既保证内容正确，又把唤醒压到最低。
  */
 fun nextWidgetRefreshAt(
     schedule: Schedule?,

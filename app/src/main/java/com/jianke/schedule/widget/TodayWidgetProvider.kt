@@ -7,8 +7,8 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
-import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -30,17 +30,20 @@ import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 
 /**
- * 「今日课程」桌面小组件：日期 + 今天全部课程（可自适应组件尺寸）+ 实时倒计时。
+ * 「今日课程」桌面小组件：日期 + 今天全部课程（可自适应组件尺寸）+ 「几点下课/上课」。
  *
  * 设计要点：
- * - 一个组件里列出当天所有课程，不再只显示一条「下一节」；行数由组件高度决定
- *   （WidgetLayout.maxRowsFor），放不下的用底部提示「还有 N 门课」；
- * - 小尺寸优先显示还没上的课（窗口从第一条未上完的课开始），避免小组件里全是已上完的课；
+ * - 一个组件里列出当天所有课程，不再只显示一条「下一节」；已知每天最多 5 节，
+ *   所以按组件尺寸最多排 5 行，组件够高时自动换大字宽松行，字不会太小、也不会空一大块；
+ * - 头部显示「10:00 下课 / 10:20 上课」的绝对时间，而不是每秒倒计时：
+ *   小组件进程会被系统冻结/重建，Chronometer 的倒计时基准在 HyperOS 上会被弄乱
+ *   （出现「还有 8:15:30 下课」这种错值），绝对时间永远不会算错；
+ * - 宽度不够时只简化课程名（机械CAD/CAM-Solidworks → 机械CAD），空间足够就用全名；
+ * - 小尺寸优先显示还没上的课（窗口从第一条未上完的课开始），已上完的用底部提示说明；
  * - 进行中的课行底色高亮、已上完的文字变暗；
- * - 倒计时交给 Chronometer 实时走秒（桌面进程自己刷新，App 零唤醒），
- *   App 只在上下课边界/跨日醒一次（nextWidgetRefreshAt + inexact 闹钟）；
- * - 兜底刷新：updatePeriodMillis 30 分钟、系统事件（开机/改时间/时区/日期）、
- *   App 内数据变化（回前台/导入完成/学期校正）；
+ * - 只在上下课边界/跨日刷一次（inexact 闹钟，不申请精确闹钟权限），
+ *   另有 updatePeriodMillis 30 分钟、开机/改时间/时区/日期等系统事件兜底，
+ *   App 内数据变化（回前台/导入完成/学期校正）也会立刻刷新；
  * - 任何异常都会渲染成可见文案（自诊断）；debug 包的日期行带「· 测试版」标识。
  */
 class TodayWidgetProvider : AppWidgetProvider() {
@@ -115,22 +118,34 @@ class TodayWidgetProvider : AppWidgetProvider() {
                 runCatching {
                     val options = manager.getAppWidgetOptions(id)
                     // Android 官方建议的取值方式：竖屏用 minWidth + maxHeight，横屏反过来。
-                    // 之前只取 minHeight，导致竖屏下按「横屏矮高度」算行数，组件底部空一大块。
                     val portrait = context.resources.configuration.orientation ==
-                        android.content.res.Configuration.ORIENTATION_PORTRAIT
+                        Configuration.ORIENTATION_PORTRAIT
                     val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
                     val maxW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)
                     val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
                     val maxH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
                     val widthDp = (if (portrait) minW else maxW).takeIf { it > 0 } ?: 250
                     val heightDp = (if (portrait) maxH else minH).takeIf { it > 0 } ?: 110
-                    val maxRows = WidgetLayout.maxRowsFor(heightDp)
                     val day: WidgetDay = try {
+                        // 先按最多 5 行探测今天实际要显示几门，再决定放大字行还是普通行
+                        val probe = widgetDay(
+                            schedule = schedule,
+                            today = today,
+                            now = nowTime,
+                            maxRows = WidgetLayout.MAX_ROWS,
+                            debugBuild = BuildConfig.DEBUG,
+                        )
+                        val style = WidgetLayout.rowStyleFor(heightDp, probe.rows.size)
+                        val capacity = if (style == WidgetLayout.RowStyle.LARGE) {
+                            WidgetLayout.MAX_ROWS
+                        } else {
+                            WidgetLayout.maxRowsFor(heightDp)
+                        }
                         widgetDay(
                             schedule = schedule,
                             today = today,
                             now = nowTime,
-                            maxRows = maxRows,
+                            maxRows = capacity,
                             debugBuild = BuildConfig.DEBUG,
                         )
                     } catch (t: Throwable) {
@@ -138,12 +153,10 @@ class TodayWidgetProvider : AppWidgetProvider() {
                         WidgetDay(
                             hasSchedule = false,
                             dateLine = today.toString(),
-                            summary = "小组件数据异常",
+                            headerHint = "",
                             rows = emptyList(),
                             skippedCount = 0,
                             hiddenCount = 0,
-                            countdownRemainingMs = null,
-                            countdownFormat = "",
                             footer = t.javaClass.simpleName,
                         )
                     }
@@ -151,13 +164,13 @@ class TodayWidgetProvider : AppWidgetProvider() {
                         TAG,
                         "id=$id options min=${minW}x${minH} max=${maxW}x${maxH} " +
                             "portrait=$portrait use=${widthDp}x${heightDp} " +
-                            "rows=${day.rows.size} hidden=${day.hiddenCount}",
+                            "rows=${day.rows.size} hidden=${day.hiddenCount} hint=${day.headerHint}",
                     )
                     val views = buildViews(
                         context = context,
                         day = day,
-                        showTime = WidgetLayout.showTime(widthDp),
-                        showRoom = WidgetLayout.showRoom(widthDp),
+                        widthDp = widthDp,
+                        style = WidgetLayout.rowStyleFor(heightDp, day.rows.size),
                     )
                     manager.updateAppWidget(id, views)
                 }.onFailure { Log.e(TAG, "render failed id=$id", it) }
@@ -173,37 +186,30 @@ class TodayWidgetProvider : AppWidgetProvider() {
         private fun buildViews(
             context: Context,
             day: WidgetDay,
-            showTime: Boolean,
-            showRoom: Boolean,
+            widthDp: Int,
+            style: WidgetLayout.RowStyle,
         ): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_today)
             views.setTextViewText(R.id.widget_date, day.dateLine)
-            views.setTextViewText(R.id.widget_summary, day.summary)
+            views.setTextViewText(R.id.widget_hint, day.headerHint)
+            views.setViewVisibility(
+                R.id.widget_hint,
+                if (day.headerHint.isBlank()) View.GONE else View.VISIBLE,
+            )
             views.setTextViewText(R.id.widget_footer, day.footer)
             views.setViewVisibility(
                 R.id.widget_footer,
                 if (day.footer.isBlank()) View.GONE else View.VISIBLE,
             )
-            // 有倒计时就把「共 N 门课」让位给 Chronometer（桌面自己走秒）
-            val countdown = day.countdownRemainingMs
-            if (countdown != null && day.countdownFormat.isNotBlank()) {
-                views.setViewVisibility(R.id.widget_summary, View.GONE)
-                views.setViewVisibility(R.id.widget_countdown, View.VISIBLE)
-                views.setChronometerCountDown(R.id.widget_countdown, true)
-                views.setChronometer(
-                    R.id.widget_countdown,
-                    SystemClock.elapsedRealtime() + countdown,
-                    day.countdownFormat,
-                    true,
-                )
-            } else {
-                views.setViewVisibility(R.id.widget_summary, View.VISIBLE)
-                views.setViewVisibility(R.id.widget_countdown, View.GONE)
-            }
+            val showTime = WidgetLayout.showTime(widthDp)
+            val showRoom = WidgetLayout.showRoom(widthDp)
             // 行数随尺寸变化：先清空再逐行 addView（子布局有独立 id，不会串）
             views.removeAllViews(R.id.widget_rows)
             day.rows.forEach { row ->
-                views.addView(R.id.widget_rows, buildRow(context, row, showTime, showRoom))
+                views.addView(
+                    R.id.widget_rows,
+                    buildRow(context, row, style, widthDp, showTime, showRoom),
+                )
             }
             val open = PendingIntent.getActivity(
                 context,
@@ -218,20 +224,29 @@ class TodayWidgetProvider : AppWidgetProvider() {
         private fun buildRow(
             context: Context,
             row: WidgetRow,
+            style: WidgetLayout.RowStyle,
+            widthDp: Int,
             showTime: Boolean,
             showRoom: Boolean,
         ): RemoteViews {
-            val views = RemoteViews(context.packageName, R.layout.widget_today_row)
+            val roomShown = showRoom && row.room.isNotBlank()
+            val layout = if (style == WidgetLayout.RowStyle.LARGE) {
+                R.layout.widget_today_row_large
+            } else {
+                R.layout.widget_today_row
+            }
+            val views = RemoteViews(context.packageName, layout)
             views.setTextViewText(R.id.row_dot, "●")
             views.setTextColor(R.id.row_dot, row.accent)
             views.setTextViewText(R.id.row_time, row.timeRange)
-            views.setTextViewText(R.id.row_name, row.name)
-            views.setTextViewText(R.id.row_room, row.room)
-            views.setViewVisibility(R.id.row_time, if (showTime) View.VISIBLE else View.GONE)
-            views.setViewVisibility(
-                R.id.row_room,
-                if (showRoom && row.room.isNotBlank()) View.VISIBLE else View.GONE,
+            // 宽度不够时才简化课程名（空间足够保持全名）
+            views.setTextViewText(
+                R.id.row_name,
+                WidgetLayout.displayName(row.name, widthDp, showTime, roomShown),
             )
+            views.setTextViewText(R.id.row_room, WidgetLayout.displayRoom(row.room))
+            views.setViewVisibility(R.id.row_time, if (showTime) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.row_room, if (roomShown) View.VISIBLE else View.GONE)
             val done = row.status == WidgetRowStatus.DONE
             val nameColor = when (row.status) {
                 WidgetRowStatus.ONGOING -> ONGOING_NAME

@@ -8,7 +8,6 @@ import com.jianke.schedule.data.WidgetRowStatus
 import com.jianke.schedule.data.widgetDay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -16,7 +15,7 @@ import java.time.LocalTime
 
 /**
  * 小组件「今天全部课程」的数据组装：
- * 行顺序 / 三种状态 / 尺寸窗口截断 / 倒计时 / 空状态 / 脏数据。
+ * 头部「几点下课/上课」/ 行顺序 / 三种状态 / 尺寸窗口截断 / 空状态 / 脏数据。
  */
 class WidgetDayTest {
 
@@ -48,17 +47,16 @@ class WidgetDayTest {
     fun noScheduleShowsImportHint() {
         val day = widgetDay(null, saturday, LocalTime.NOON, maxRows = 3)
         assertFalse(day.hasSchedule)
-        assertEquals("还没有课表", day.summary)
+        assertEquals("", day.headerHint)
         assertTrue(day.rows.isEmpty())
         assertTrue(day.footer.contains("导入"))
-        assertNull(day.countdownRemainingMs)
     }
 
     @Test
     fun noClassTodayShowsRest() {
         val day = widgetDay(scheduleOf(course(day = 1, start = 1, end = 2)), saturday, LocalTime.NOON, 3)
         assertTrue(day.hasSchedule)
-        assertEquals("今天没有课", day.summary)
+        assertEquals("今天没有课", day.headerHint)
         assertTrue(day.rows.isEmpty())
         assertTrue(day.footer.contains("休息"))
     }
@@ -77,13 +75,11 @@ class WidgetDayTest {
             listOf(WidgetRowStatus.DONE, WidgetRowStatus.ONGOING, WidgetRowStatus.UPCOMING),
             day.rows.map { it.status },
         )
-        assertEquals("共 3 门课", day.summary)
+        // 头部显示「几点下课」的绝对时间，不再显示秒级倒计时
+        assertEquals("12:00 下课", day.headerHint)
         assertEquals(0, day.skippedCount)
         assertEquals(0, day.hiddenCount)
         assertEquals("", day.footer)
-        // 正在进行：倒计时到 12:00 下课
-        assertEquals("还有 %s 下课", day.countdownFormat)
-        assertEquals(90L * 60L * 1000L, day.countdownRemainingMs)
     }
 
     @Test
@@ -111,8 +107,7 @@ class WidgetDayTest {
         assertEquals(2, day.skippedCount)
         assertEquals(1, day.hiddenCount)
         assertEquals("还有 1 门课，点开看全部", day.footer)
-        assertEquals("还有 %s 下课", day.countdownFormat)
-        assertEquals(40L * 60L * 1000L, day.countdownRemainingMs)
+        assertEquals("15:40 下课", day.headerHint)
     }
 
     @Test
@@ -129,23 +124,23 @@ class WidgetDayTest {
         assertEquals(1, day.skippedCount)
         assertEquals(0, day.hiddenCount)
         assertEquals("早先 1 门已上完", day.footer)
-        assertNull(day.countdownRemainingMs)
+        assertEquals("今天的课上完了", day.headerHint)
     }
 
     @Test
-    fun allDoneShowsCompletionFooter() {
+    fun allDoneShowsCompletionHint() {
         val schedule = scheduleOf(course(start = 1, end = 2))
         val day = widgetDay(schedule, saturday, LocalTime.of(23, 0), maxRows = 3)
-        assertEquals("今天的课上完了", day.footer)
+        assertEquals("今天的课上完了", day.headerHint)
+        assertEquals("", day.footer)
         assertEquals(WidgetRowStatus.DONE, day.rows.single().status)
     }
 
     @Test
-    fun upcomingShowsCountdownToClassStart() {
+    fun upcomingShowsClassStartTime() {
         val schedule = scheduleOf(course(start = 3, end = 4))
         val day = widgetDay(schedule, saturday, LocalTime.of(9, 0), maxRows = 3)
-        assertEquals("还有 %s 上课", day.countdownFormat)
-        assertEquals(80L * 60L * 1000L, day.countdownRemainingMs)
+        assertEquals("10:20 上课", day.headerHint)
         assertEquals(WidgetRowStatus.UPCOMING, day.rows.single().status)
     }
 
@@ -157,7 +152,7 @@ class WidgetDayTest {
         val row = day.rows.single()
         assertEquals("时间待定", row.timeRange)
         assertEquals(WidgetRowStatus.UPCOMING, row.status)
-        assertNull(day.countdownRemainingMs)
+        assertEquals("", day.headerHint)
         assertEquals("", day.footer)
     }
 
