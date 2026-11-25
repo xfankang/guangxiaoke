@@ -101,23 +101,25 @@ data class WidgetRow(
  *
  * [rows] 一定是**当天全部课程**（按节次排序，不截断、不跳过）——
  * 行数放不下由 [WidgetLayout.chooseLayout] 通过降档行高解决。
- * 头部不再显示「今天的课上完了」这类冗余文案，全部上完时 [headerHint] 为空。
+ *
+ * 小组件只保留四类信息：日期（[dateLine]）、课程时间（[WidgetRow.timeRange]）、
+ * 课程名（[WidgetRow.name]）、地点（[WidgetRow.room]）。「几点上课 / 几点下课 /
+ * 今天的课上完了」这类提示文字整体删除，所以 [hint] 只在空状态
+ * （没导入课表 / 今天没课）时才有内容。
  */
 data class WidgetDay(
     val hasSchedule: Boolean,
     val dateLine: String,
-    /** 头部右侧的「几点下课 / 几点上课」：绝对时间，任何时候都不会算错；无提示时为空串。 */
-    val headerHint: String,
+    /** 空状态提示：「点此导入课表」/「今天没有课」；有课时为空串。 */
+    val hint: String,
     val rows: List<WidgetRow>,
 )
 
 /**
  * 组装小组件「今天全天课程」的展示数据（纯函数）。
  *
- * 头部刻意不用「剩余 mm:ss 倒计时」：小组件进程会被系统冻结/重建，
- * Chronometer 的倒计时基准在 HyperOS 上会被弄乱（出现「还有 8:15:30 下课」这种错值）。
- * 改成显示「10:00 下课 / 10:20 上课」的绝对时间，任何刷新时机都不会算错；
- * 全部上完时头部留空（每个圆点都变成 ✓，用户一眼就知道上完了）。
+ * 头部只放日期；「几点上课 / 几点下课」这类提示已整体删除（小组件保持简洁），
+ * 时间信息统一交给每行的 [WidgetRow.timeRange]，进度交给行首的 ● / ✓。
  *
  * 返回的行是全天全部课程，不做任何窗口截断。
  */
@@ -134,7 +136,7 @@ fun widgetDay(
     val dateLine = if (debugBuild) dateLineBase + " · 测试版" else dateLineBase
     if (schedule == null) {
         return WidgetDay(
-            hasSchedule = false, dateLine = dateLine, headerHint = "点此导入课表",
+            hasSchedule = false, dateLine = dateLine, hint = "点此导入课表",
             rows = emptyList(),
         )
     }
@@ -144,7 +146,7 @@ fun widgetDay(
         .sortedWith(compareBy({ it.startPeriod }, { it.name }))
     if (courses.isEmpty()) {
         return WidgetDay(
-            hasSchedule = true, dateLine = dateLine, headerHint = "今天没有课",
+            hasSchedule = true, dateLine = dateLine, hint = "今天没有课",
             rows = emptyList(),
         )
     }
@@ -160,18 +162,10 @@ fun widgetDay(
         )
     }
 
-    val ongoing = statuses.indexOfFirst { it == WidgetRowStatus.ONGOING }
-    val upcoming = statuses.indexOfFirst { it == WidgetRowStatus.UPCOMING }
-    val headerHint = when {
-        ongoing >= 0 -> lessonTimes[courses[ongoing].endPeriod]?.second?.plus(" 下课").orEmpty()
-        upcoming >= 0 -> lessonTimes[courses[upcoming].startPeriod]?.first?.plus(" 上课").orEmpty()
-        else -> "" // 全部上完：不显示多余文字，圆点已变成 ✓
-    }
-
     return WidgetDay(
         hasSchedule = true,
         dateLine = dateLine,
-        headerHint = headerHint,
+        hint = "", // 有课时不显示任何提示文字，只留日期 + 课程行
         rows = rows,
     )
 }
@@ -205,8 +199,8 @@ private fun timeRangeOf(
  * 小组件下一次「内容会变」的时刻（epoch millis）：
  * 今天剩余课程的上下课边界里最早的一个；没有边界就退到次日 00:00:05。
  *
- * 头部显示的是「几点下课/上课」这类绝对时间，不需要每秒刷新；
- * 只在状态切换的边界（下课/上课/跨日）醒一次，既保证内容正确，又把唤醒压到最低。
+ * 行首的 ● / ✓、进行中高亮只在状态切换的边界（下课/上课/跨日）变化，
+ * 不需要每秒刷新，所以只在这些边界醒一次，把唤醒压到最低。
  */
 fun nextWidgetRefreshAt(
     schedule: Schedule?,

@@ -15,7 +15,7 @@ import java.time.LocalTime
 
 /**
  * 小组件「今天全天课程」的数据组装：
- * 全部课程都返回（不截断）/ 头部绝对时间 / 三种状态 / 空状态 / 脏数据。
+ * 全部课程都返回（不截断）/ 不再有上课时间提示 / 三种状态 / 空状态 / 脏数据。
  */
 class WidgetDayTest {
 
@@ -47,7 +47,7 @@ class WidgetDayTest {
     fun noScheduleShowsImportHint() {
         val day = widgetDay(null, saturday, LocalTime.NOON)
         assertFalse(day.hasSchedule)
-        assertTrue(day.headerHint.contains("导入"))
+        assertTrue(day.hint.contains("导入"))
         assertTrue(day.rows.isEmpty())
     }
 
@@ -55,7 +55,7 @@ class WidgetDayTest {
     fun noClassTodayShowsHint() {
         val day = widgetDay(scheduleOf(course(day = 1, start = 1, end = 2)), saturday, LocalTime.NOON)
         assertTrue(day.hasSchedule)
-        assertEquals("今天没有课", day.headerHint)
+        assertEquals("今天没有课", day.hint)
         assertTrue(day.rows.isEmpty())
     }
 
@@ -73,8 +73,8 @@ class WidgetDayTest {
             listOf(WidgetRowStatus.DONE, WidgetRowStatus.ONGOING, WidgetRowStatus.UPCOMING),
             day.rows.map { it.status },
         )
-        // 头部显示「几点下课」的绝对时间
-        assertEquals("12:00 下课", day.headerHint)
+        // 有课的小组件不再显示任何上课/下课提示文字
+        assertEquals("", day.hint)
     }
 
     @Test
@@ -99,10 +99,12 @@ class WidgetDayTest {
     }
 
     @Test
-    fun upcomingShowsClassStartTime() {
+    fun upcomingCourseHasNoTimeHint() {
         val schedule = scheduleOf(course(start = 3, end = 4))
         val day = widgetDay(schedule, saturday, LocalTime.of(9, 0))
-        assertEquals("10:20 上课", day.headerHint)
+        // 之前头部会显示「10:20 上课」，现在只留日期，课程时间在行内
+        assertEquals("", day.hint)
+        assertEquals("10:20-12:00", day.rows.single().timeRange)
         assertEquals(WidgetRowStatus.UPCOMING, day.rows.single().status)
     }
 
@@ -110,8 +112,8 @@ class WidgetDayTest {
     fun allDoneHasNoRedundantHint() {
         val schedule = scheduleOf(course(start = 1, end = 2))
         val day = widgetDay(schedule, saturday, LocalTime.of(23, 0))
-        // 不再显示「今天的课上完了」，圆点会在渲染层变成 ✓
-        assertEquals("", day.headerHint)
+        // 不显示「今天的课上完了」，圆点会在渲染层变成 ✓
+        assertEquals("", day.hint)
         assertEquals(WidgetRowStatus.DONE, day.rows.single().status)
     }
 
@@ -123,7 +125,7 @@ class WidgetDayTest {
         val row = day.rows.single()
         assertEquals("时间待定", row.timeRange)
         assertEquals(WidgetRowStatus.UPCOMING, row.status)
-        assertEquals("", day.headerHint)
+        assertEquals("", day.hint)
     }
 
     @Test

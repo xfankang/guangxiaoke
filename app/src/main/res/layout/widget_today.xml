@@ -28,7 +28,8 @@
             android:maxLines="1"
             android:ellipsize="end" />
 
-        <!-- 「10:00 下课 / 10:20 上课」：绝对时间，不依赖秒级倒计时基准 -->
+        <!-- 只在空状态显示一句提示（今天没有课 / 点此导入课表）；有课时隐藏，
+             不再显示「10:00 下课 / 10:20 上课」这类上课时间提示 -->
         <TextView
             android:id="@+id/widget_hint"
             android:layout_width="wrap_content"

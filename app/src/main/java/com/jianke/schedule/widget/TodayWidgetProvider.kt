@@ -37,9 +37,10 @@ import java.time.LocalDateTime
  * - **当天所有课程都显示**（已知每天最多 5 节）：按组件高度在 XL/L/M/S 四档行样式里
  *   挑能放下全部行的最大一档，字号不会小到看不清；极矮组件才隐藏日期头部保课程；
  * - 已完成课程的行首标记是**同色打勾「✓」**，进行中/未开始是「●」；
- * - 头部只保留「10:00 下课 / 10:20 上课」的绝对时间；全部上完时头部留空，
- *   不再显示「今天的课上完了 / 早先 N 门已上完 / 还有 N 门课」这类多余文字；
- * - 绝对时间不依赖倒计时基准，HyperOS 冻结/重建小组件也不会算错；
+ * - 头部只显示日期；「10:00 下课 / 10:20 上课」等提示文字已整体删除，
+ *   每行只保留课程时间、课程名、地点，界面保持简洁；
+ * - 行状态只靠颜色和 ● / ✓ 表达，不依赖任何倒计时基准，
+ *   HyperOS 冻结/重建小组件也不会显示错时间；
  * - 只在上下课边界/跨日刷一次（inexact 闹钟，不申请精确闹钟权限），
  *   另有 updatePeriodMillis 30 分钟、开机/改时间/时区/日期等系统事件兜底，
  *   App 内数据变化（回前台/导入完成/学期校正）也会立刻刷新；
@@ -137,7 +138,7 @@ class TodayWidgetProvider : AppWidgetProvider() {
                         WidgetDay(
                             hasSchedule = false,
                             dateLine = today.toString(),
-                            headerHint = "",
+                            hint = "",
                             rows = emptyList(),
                         )
                     }
@@ -174,10 +175,11 @@ class TodayWidgetProvider : AppWidgetProvider() {
         ): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_today)
             views.setTextViewText(R.id.widget_date, day.dateLine)
-            views.setTextViewText(R.id.widget_hint, day.headerHint)
+            // 只有空状态（没导入课表 / 今天没课）才在头部右侧显示一句提示，有课时不显示任何文字
+            views.setTextViewText(R.id.widget_hint, day.hint)
             views.setViewVisibility(
                 R.id.widget_hint,
-                if (day.headerHint.isBlank()) View.GONE else View.VISIBLE,
+                if (day.hint.isBlank()) View.GONE else View.VISIBLE,
             )
             // 只有极矮、带头部放不下全部课程时才隐藏头部，优先保证课程全部可见
             views.setViewVisibility(
